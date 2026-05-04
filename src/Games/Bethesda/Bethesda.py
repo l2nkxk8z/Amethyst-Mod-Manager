@@ -1480,6 +1480,14 @@ class Enderal(Fallout_3):
     def _script_extender_exe(self) -> str:
         return "skse_loader.exe"
 
+    def swap_launcher(self, log_fn) -> None:
+        # Enderal Launcher.exe already bootstraps SKSE; swapping breaks it.
+        log_fn("  Enderal Launcher invokes SKSE internally — skipping launcher swap.")
+
+    def _restore_launcher(self, log_fn) -> None:
+        # Migration path: undo any prior swap left over from earlier versions.
+        super()._restore_launcher(log_fn)
+
     @property
     def wizard_tools(self) -> list[WizardTool]:
         return self._base_wizard_tools() + [
@@ -1535,6 +1543,14 @@ class EnderalSE(Fallout_3):
     @property
     def _script_extender_exe(self) -> str:
         return "skse64_loader.exe"
+
+    def swap_launcher(self, log_fn) -> None:
+        # Enderal Launcher.exe already bootstraps SKSE64; swapping breaks it.
+        log_fn("  Enderal Launcher invokes SKSE64 internally — skipping launcher swap.")
+
+    def _restore_launcher(self, log_fn) -> None:
+        # Migration path: undo any prior swap left over from earlier versions.
+        super()._restore_launcher(log_fn)
 
     @property
     def wizard_tools(self) -> list[WizardTool]:
