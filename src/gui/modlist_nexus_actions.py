@@ -22,7 +22,7 @@ from pathlib import Path
 
 from Utils.config_paths import get_download_cache_dir_for_game
 from Utils.xdg import open_url
-from gui.ctk_components import CTkNotification
+from gui.ctk_components import CTkAlert, CTkNotification
 from gui.game_helpers import _GAMES
 from gui.install_mod import install_mod_from_archive
 from gui.mod_files_overlay import ModFilesOverlay
@@ -33,6 +33,32 @@ from Nexus.nexus_update_checker import check_for_updates
 
 class ModListNexusActionsMixin:
     """Endorse/abstain, update install, reinstall, and update-check flows."""
+
+    def _warn_nexus_login_required(self) -> None:
+        """Log the standard message and show an alert with a shortcut to the
+        Nexus settings panel so the user knows where to log in."""
+        self._log("Nexus: Login to Nexus first (Nexus button).")
+        app = self.winfo_toplevel()
+        open_settings = (
+            app.get_nexus_settings_opener()
+            if hasattr(app, "get_nexus_settings_opener") else None
+        )
+        alert = CTkAlert(
+            state="warning",
+            title="Nexus login required",
+            body_text=(
+                "You need to log in to Nexus Mods first.\n\n"
+                "Open Nexus settings to log into Nexus"
+            ),
+            btn1="Open Nexus Settings",
+            btn2="Cancel",
+            parent=app,
+        )
+        if alert.get() == "Open Nexus Settings" and open_settings is not None:
+            try:
+                open_settings()
+            except Exception as exc:
+                self._log(f"Nexus: Could not open settings — {exc}")
 
     def _open_nexus_page(self, url: str) -> None:
         """Open a Nexus Mods page in the default browser."""
@@ -99,7 +125,7 @@ class ModListNexusActionsMixin:
         """Show the mod files overlay so the user can pick which file to install."""
         app = self.winfo_toplevel()
         if getattr(app, "_nexus_api", None) is None:
-            self._log("Nexus: Login to Nexus first (Nexus button).")
+            self._warn_nexus_login_required()
             return
         if self._modlist_path is None:
             return
@@ -359,7 +385,7 @@ class ModListNexusActionsMixin:
         (only the all-mods variant logs it)."""
         app = self.winfo_toplevel()
         if app._nexus_api is None:
-            self._log("Nexus: Login to Nexus first (Nexus button).")
+            self._warn_nexus_login_required()
             return
         game = self._game
         if game is None or not game.is_configured():
