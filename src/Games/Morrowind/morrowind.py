@@ -106,7 +106,7 @@ class Morrowind(BaseGame):
 
     @property
     def conflict_ignore_filenames(self) -> set[str]:
-        return {"info.xml", "readme.txt", "*.jpg"}
+        return {"info.xml", "readme.txt"}
 
     @property
     def loot_sort_enabled(self) -> bool:
