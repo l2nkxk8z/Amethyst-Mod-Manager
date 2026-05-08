@@ -31,7 +31,7 @@ from typing import Callable
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\[[?][0-9;]*[A-Za-z]|\x1b[A-Za-z]|\r")
 
-from Utils.config_paths import get_config_dir, get_download_cache_dir
+from Utils.config_paths import get_config_dir, get_wine_prefixes_dir
 from Utils.steam_finder import find_any_installed_proton
 
 
@@ -442,7 +442,7 @@ def run_vramr(
     # Discover Wine
     _log("Locating Proton/Wine...")
     wine = _find_wine()
-    prefix = str(get_download_cache_dir() / "wine_prefixes" / "vramr")
+    prefix = str(get_wine_prefixes_dir() / "vramr")
     Path(prefix).mkdir(parents=True, exist_ok=True)
     _log(f"  Wine: {wine}")
     _ensure_utf8_prefix(wine, prefix)

@@ -19,7 +19,6 @@ from Utils.config_paths import (
     get_download_cache_dir_for_game,
     get_profiles_dir,
     get_config_dir,
-    _CACHE_ROOT_RESERVED,
 )
 from Utils.xdg import xdg_open
 from Utils.ui_config import (
@@ -1365,9 +1364,8 @@ class SettingsPanel(ctk.CTkFrame):
         self._slider.configure(state="disabled" if self._auto_var.get() else "normal")
 
     # Entries at the cache root that "Clear All Caches" must preserve.
-    # wine_prefixes/ (used by VRAMR/Bendr/Parallaxr wrappers) and the
-    # md5_cache.json hash sidecar are global, not per-game archives.
-    _CLEAR_ALL_PRESERVE = _CACHE_ROOT_RESERVED | {"md5_cache.json"}
+    # md5_cache.json is a global hash sidecar, not a per-game archive.
+    _CLEAR_ALL_PRESERVE = {"md5_cache.json"}
 
     def _active_game_name(self) -> str:
         """Return the currently selected game name, or '' if none."""
@@ -1444,7 +1442,7 @@ class SettingsPanel(ctk.CTkFrame):
                 body_text=(
                     f"Clear {_fmt_size(size)} of cached downloads across every game?\n\n"
                     f"Location: {cache_dir}\n\n"
-                    "Wine prefixes and the md5 cache are preserved. "
+                    "The md5 cache is preserved. "
                     "Archives will be re-downloaded as needed."
                 ),
                 btn1="Clear",

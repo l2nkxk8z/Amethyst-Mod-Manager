@@ -197,7 +197,42 @@ def get_custom_game_images_dir() -> Path:
     return d
 
 
-_CACHE_ROOT_RESERVED = {"wine_prefixes"}
+_CACHE_ROOT_RESERVED: set[str] = set()
+
+
+def get_wine_prefixes_dir() -> Path:
+    """Return the directory holding Wine prefixes for VRAMr/Bendr/ParallaxR.
+
+    Lives in the app config (not the download cache) so "Clear Cache" never
+    blows it away and a user-relocated download cache stays archive-only.
+
+    Result: ~/.config/AmethystModManager/wine_prefixes/
+
+    Migrates an existing ``<download_cache>/wine_prefixes`` directory on first
+    access — best-effort: if migration fails the old location is left alone.
+    """
+    d = get_config_dir() / "wine_prefixes"
+    if not d.exists():
+        legacy = get_config_dir() / "download_cache" / "wine_prefixes"
+        try:
+            from Utils.ui_config import load_download_cache_path  # lazy: avoid cycles
+            custom = load_download_cache_path().strip()
+        except Exception:
+            custom = ""
+        if custom:
+            try:
+                legacy_custom = Path(custom).expanduser() / "wine_prefixes"
+                if legacy_custom.is_dir():
+                    legacy = legacy_custom
+            except Exception:
+                pass
+        if legacy.is_dir():
+            try:
+                legacy.rename(d)
+            except OSError:
+                pass
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 def get_download_cache_dir() -> Path:
