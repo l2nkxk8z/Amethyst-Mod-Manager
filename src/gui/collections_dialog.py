@@ -919,7 +919,7 @@ class OptionalModsPanel(ctk.CTkFrame):
             row = ctk.CTkFrame(scroll, fg_color="transparent")
             row.grid_columnconfigure(0, weight=1)
             row.grid(sticky="ew")
-            ctk.CTkCheckBox(
+            cb = ctk.CTkCheckBox(
                 row,
                 text=f"{name_text}{author_text}",
                 variable=var,
@@ -929,7 +929,12 @@ class OptionalModsPanel(ctk.CTkFrame):
                 hover_color=ACCENT_HOV,
                 checkmark_color="white",
                 border_color=BORDER,
-            ).grid(row=0, column=0, sticky="w", padx=8, pady=3)
+            )
+            cb.grid(row=0, column=0, sticky="w", padx=8, pady=3)
+            if not LEGACY_WHEEL_REDUNDANT:
+                for w in (row, cb):
+                    w.bind("<Button-4>", lambda e: scroll._parent_canvas.yview_scroll(-1, "units"))
+                    w.bind("<Button-5>", lambda e: scroll._parent_canvas.yview_scroll( 1, "units"))
 
         helper = ctk.CTkFrame(self, fg_color="transparent")
         helper.pack(fill="x", padx=12, pady=(0, 4))
