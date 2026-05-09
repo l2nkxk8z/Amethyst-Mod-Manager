@@ -1,3 +1,6 @@
+- v1.3.3
+- Fixed plugins being disabled on manual collection installs
+
 - v1.3.2
 - Reworked the download Tab
 - Removed the option to symlink plugins, This was just a debugging feature I forgot to remove
