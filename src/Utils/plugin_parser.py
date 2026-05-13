@@ -205,6 +205,12 @@ def read_masters_with_sizes(plugin_path: Path) -> dict[str, int]:
 # Introduced in Fallout 4; also supported by Skyrim SE/VR, Starfield, Enderal SE.
 TES4_FLAG_ESL = 0x0200
 
+# Starfield-only: marks a plugin as a "blueprint" (or BlueprintShips) plugin.
+# Per esplugin (src/plugin.rs is_blueprint_plugin) and libloadorder
+# (asterisk_based.rs save()), ALL blueprint plugins must be stripped from
+# Plugins.txt — Starfield silently drops any blueprint plugin it sees there.
+TES4_FLAG_BLUEPRINT = 0x0800
+
 # Games that fully support the ESL flag (set by the game panel via supports_esl_flag).
 # This constant is informational — the authoritative gate is the game property.
 _ESL_SUPPORTED_GAME_IDS: frozenset[str] = frozenset({
@@ -234,6 +240,17 @@ def is_esl_flagged(plugin_path: Path) -> bool:
     """Return ``True`` if the plugin has the ESL (light) bit set in its TES4 header."""
     flags = read_plugin_header_flags(plugin_path)
     return bool(flags is not None and (flags & TES4_FLAG_ESL))
+
+
+def is_blueprint_flagged(plugin_path: Path) -> bool:
+    """Return ``True`` if the plugin has the Starfield Blueprint bit (0x800) set.
+
+    Blueprint plugins must be omitted from Plugins.txt — Starfield strips any
+    blueprint line at load time, and listing one causes the game to skip every
+    plugin after it.
+    """
+    flags = read_plugin_header_flags(plugin_path)
+    return bool(flags is not None and (flags & TES4_FLAG_BLUEPRINT))
 
 
 def set_esl_flag(plugin_path: Path, enable: bool) -> bool:

@@ -2823,11 +2823,28 @@ class PluginPanel(PluginPanelExeLauncherMixin, PluginPanelLOOTMixin,
         # Orphan plugins: files sitting in Data/ that the user installed manually
         # — not in plugins.txt, not in loadorder.txt, not vanilla. Surface them
         # so they can be toggled from the panel.
+        #
+        # When a deploy is active, Data/ contains mod hardlinks owned by the
+        # mod manager. Anything NOT present in Data_Core/ (the vanilla snapshot)
+        # came from a mod deploy and must not be treated as a manual orphan —
+        # otherwise disabling a mod still leaves its plugin in the panel,
+        # because the hardlink in Data/ outlives its plugins.txt entry until
+        # the next deploy.
         data_dir = self._game.get_vanilla_plugins_path() if self._game and hasattr(self._game, "get_vanilla_plugins_path") else None
         if data_dir and data_dir.is_dir() and self._plugin_extensions:
             exts_lower = {e.lower() for e in self._plugin_extensions}
             saved_lower = {n.lower() for n in saved_order}
             foreign = foreign_deployed_plugin_basenames(self._game)
+            core_dir = data_dir.parent / (data_dir.name + "_Core")
+            core_names: set[str] | None = None
+            if core_dir.is_dir():
+                core_names = set()
+                try:
+                    for centry in core_dir.iterdir():
+                        if centry.is_file() and centry.suffix.lower() in exts_lower:
+                            core_names.add(centry.name.lower())
+                except OSError:
+                    core_names = None
             try:
                 for entry in data_dir.iterdir():
                     if not entry.is_file() or entry.suffix.lower() not in exts_lower:
@@ -2836,6 +2853,11 @@ class PluginPanel(PluginPanelExeLauncherMixin, PluginPanelLOOTMixin,
                     if low in mod_map or low in self._vanilla_plugins or low in saved_lower:
                         continue
                     if low in foreign:
+                        continue
+                    # Deploy active → only vanilla files (present in Data_Core/)
+                    # are legitimate. Mod-deployed plugins that no longer have
+                    # a plugins.txt entry are stale hardlinks, not orphans.
+                    if core_names is not None and low not in core_names:
                         continue
                     orphan = PluginEntry(name=entry.name, enabled=True)
                     mod_map[low] = orphan

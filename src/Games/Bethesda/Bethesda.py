@@ -277,6 +277,7 @@ class Fallout_3(BaseGame):
         from Utils.deploy import CustomRule
         return [
             CustomRule(dest="", filenames=["fose_loader.exe"], flatten=True),
+            CustomRule(dest="", folders=["Data"], flatten=True),
             CustomRule(dest="", filenames=["fose*.dll"], flatten=True),
                 ]
 
@@ -831,6 +832,8 @@ class Fallout_NV(Fallout_3):
         from Utils.deploy import CustomRule
         return [
             CustomRule(dest="", filenames=["nvse*.dll"], flatten=True),
+            CustomRule(dest="", folders=["Data"], flatten=True),
+            CustomRule(dest="", filenames=["nvse_loader.exe"], flatten=True),
             CustomRule(dest="", filenames=["nvse*.pdb"], flatten=True),
                 ]
 
@@ -933,6 +936,7 @@ class Fallout_4(Fallout_3):
         return [
             CustomRule(dest="", filenames=["f4se_loader.exe"], flatten=True),
             CustomRule(dest="", filenames=["f4se*.dll"], flatten=True),
+            CustomRule(dest="", folders=["Data"], flatten=True),
             CustomRule(dest="", filenames=["CustomControlMap.txt"], flatten=True),
                 ]
 
@@ -1016,6 +1020,7 @@ class Fallout_4VR(Fallout_3):
         return [
             CustomRule(dest="", filenames=["f4sevr_steam_loader.dll"], flatten=True),
             CustomRule(dest="", filenames=["f4sevr_loader.exe"], flatten=True),
+            CustomRule(dest="", folders=["Data"], flatten=True),
             CustomRule(dest="", filenames=["f4sevr*.dll"], flatten=True),
                 ]
 
@@ -1111,6 +1116,7 @@ class Oblivion(Fallout_3):
         from Utils.deploy import CustomRule
         return [
             CustomRule(dest="", filenames=["obse_loader.exe"], flatten=True),
+            CustomRule(dest="", folders=["Data"], flatten=True),
             CustomRule(dest="", filenames=["obse*.dll"], flatten=True),
         ]
 
@@ -1234,7 +1240,8 @@ class Skyrim(Fallout_3):
         from Utils.deploy import CustomRule
         return [
             CustomRule(dest="", filenames=["skse_loader.exe"], flatten=True),
-            CustomRule(dest="", filenames=["skse*l"], flatten=True),
+            CustomRule(dest="", filenames=["skse*.dll"], flatten=True),
+            CustomRule(dest="", folders=["Data"], flatten=True),
         ]
 
     _APPDATA_SUBPATH = Path("drive_c/users/steamuser/AppData/Local/Skyrim")
@@ -1324,6 +1331,7 @@ class SkyrimVR(Fallout_3):
         return [
             CustomRule(dest="", filenames=["sksevr_loader.exe"], flatten=True),
             CustomRule(dest="", filenames=["sksevr*.dll"], flatten=True),
+            CustomRule(dest="", folders=["Data"], flatten=True),
         ]
 
     _APPDATA_SUBPATH = Path("drive_c/users/steamuser/AppData/Local/Skyrim VR")
@@ -1344,6 +1352,7 @@ class Starfield(Fallout_3):
         "Starfield.esm", "Constellation.esm", "ShatteredSpace.esm",
         "OldMars.esm", "SFBGS003.esm", "SFBGS004.esm", "SFBGS006.esm",
         "SFBGS007.esm", "SFBGS008.esm", "BlueprintShips-Starfield.esm",
+        "SFBGS00D.esm", "SFBGS047.esm", "SFBGS050.esm", "BlueprintShips-SFBGS050.esm",
     ]
     vanilla_dlc_plugins: list[str] = []
     vanilla_ccc_filename = "Starfield.ccc"
@@ -1423,6 +1432,7 @@ class Starfield(Fallout_3):
         return [
             CustomRule(dest="", filenames=["sfse_loader.exe"], flatten=True),
             CustomRule(dest="", filenames=["sfse*.dll"], flatten=True),
+            CustomRule(dest="", folders=["Data"], flatten=True),
         ]
 
     # plugins.txt lives at AppData/Local/Starfield/plugins.txt — same pattern as other Bethesda titles.
@@ -1439,6 +1449,64 @@ class Starfield(Fallout_3):
         if self._prefix_path is None:
             return None
         return self._prefix_path / self._APPDATA_SUBPATH / "Plugins.txt"
+
+    def _symlink_plugins_txt(self, profile: str, log_fn) -> None:
+        """Write a Blueprint-stripped copy of Plugins.txt into the prefix.
+
+        Starfield silently drops every plugin appearing after a Blueprint
+        (or BlueprintShips) plugin in Plugins.txt, so the prefix-side file
+        must omit them entirely — matching libloadorder's behavior. The
+        profile's plugins.txt is left untouched so blueprints stay visible
+        in the load-order UI.
+        """
+        from Utils.plugin_parser import is_blueprint_flagged
+        from Utils.plugins import read_plugins
+
+        _log = log_fn
+        target = self._plugins_txt_target()
+        if target is None:
+            _log("  WARN: Prefix path not set — skipping Plugins.txt write.")
+            return
+
+        source = self.get_profile_root() / "profiles" / profile / "plugins.txt"
+        if not source.is_file():
+            _log(f"  WARN: plugins.txt not found at {source} — skipping write.")
+            return
+
+        if self._game_path is None:
+            _log("  WARN: Game path not set — skipping Plugins.txt write.")
+            return
+        data_dir = self._game_path / "Data"
+
+        entries = read_plugins(source, star_prefix=True)
+        kept: list = []
+        stripped: list[str] = []
+        for e in entries:
+            plugin_file = data_dir / e.name
+            if plugin_file.is_file() and is_blueprint_flagged(plugin_file):
+                stripped.append(e.name)
+                continue
+            kept.append(e)
+
+        if target.exists() or target.is_symlink():
+            target.unlink()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        lines = [(f"*{e.name}" if e.enabled else e.name) for e in kept]
+        target.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+        if stripped:
+            _log(f"  Stripped {len(stripped)} Blueprint plugin(s) from Plugins.txt: "
+                 + ", ".join(stripped))
+        _log(f"  Wrote Plugins.txt → {target}")
+
+    def _remove_plugins_txt_symlink(self, log_fn) -> None:
+        """Remove the Plugins.txt copy from the prefix on restore."""
+        _log = log_fn
+        target = self._plugins_txt_target()
+        if target is None:
+            return
+        if target.exists() or target.is_symlink():
+            target.unlink()
+            _log("  Removed Plugins.txt from prefix.")
 
     def swap_launcher(self, log_fn) -> None:
         """Replace Starfield.exe with sfse_loader.exe and write Data/SFSE/sfse.ini.

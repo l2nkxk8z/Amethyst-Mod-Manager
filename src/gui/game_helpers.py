@@ -63,19 +63,17 @@ def foreign_deployed_plugin_basenames(game) -> set[str]:
 def _vanilla_plugins_for_game(game) -> dict[str, str]:
     """Return {lowercase_name: original_name} for vanilla plugins."""
     result: dict[str, str] = {}
-    for name in getattr(game, "vanilla_plugins", []) or []:
-        result[name.lower()] = name
-
+    base_plugins = list(getattr(game, "vanilla_plugins", []) or [])
     dlc_plugins = getattr(game, "vanilla_dlc_plugins", []) or []
     ccc_name = getattr(game, "vanilla_ccc_filename", None)
-    if not dlc_plugins and not ccc_name:
-        return result
 
-    # DLC and CC entries are only treated as vanilla if their file is present
-    # in the Data folder — users may not own every DLC. We scan the live folder
-    # without subtracting another profile's deployment: DLC names are a fixed
-    # list and CC names come from the .ccc manifest, so cross-profile mod
-    # plugins can't accidentally match here.
+    # Base, DLC, and CC entries are only treated as vanilla if the file is
+    # present in the Data folder — users may not own every DLC/expansion, and
+    # vanilla lists include plugins from future expansions (e.g. Starfield's
+    # SFBGS* placeholders). We scan the live folder without subtracting another
+    # profile's deployment: vanilla names are a fixed list and CC names come
+    # from the .ccc manifest, so cross-profile mod plugins can't accidentally
+    # match here.
     data_dir = game.get_vanilla_plugins_path() if hasattr(game, "get_vanilla_plugins_path") else None
     present: set[str] = set()
     if data_dir and data_dir.is_dir():
@@ -83,6 +81,13 @@ def _vanilla_plugins_for_game(game) -> dict[str, str]:
             present = {entry.name.lower() for entry in data_dir.iterdir() if entry.is_file()}
         except OSError:
             pass
+
+    for name in base_plugins:
+        if name.lower() in present:
+            result[name.lower()] = name
+
+    if not dlc_plugins and not ccc_name:
+        return result
 
     for name in dlc_plugins:
         if name.lower() in present:

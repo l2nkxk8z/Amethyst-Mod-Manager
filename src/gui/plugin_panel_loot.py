@@ -260,17 +260,6 @@ class PluginPanelLOOTMixin:
             except OSError as e:
                 self._log(f"Could not write loot.json: {e}")
 
-            if result.moved_count == 0 and not locked_indices:
-                self._log("Load order is already sorted.")
-                self._refresh_plugins_tab()
-                _done_notif = CTkNotification(
-                    self.winfo_toplevel(),
-                    state="info",
-                    message="Load order is already sorted",
-                )
-                self.after(4000, lambda n=_done_notif: n.winfo_exists() and n.destroy())
-                return
-
             # Re-interleave: place locked plugins back at their original indices,
             # filling remaining slots with the LOOT-sorted unlocked plugins.
             name_to_enabled = {e.name: e.enabled for e in self._plugin_entries}
@@ -286,8 +275,36 @@ class PluginPanelLOOTMixin:
                 else:
                     new_entries.append(next(sorted_unlocked))
 
-            self._plugin_entries = new_entries
             _include_vanilla = self._plugins_include_vanilla
+
+            # Count moves only across plugins the user actually sees in the
+            # written load order. Vanilla plugins that get filtered out of
+            # plugins.txt would otherwise inflate the count by reshuffling
+            # internally without any visible change.
+            def _visible(names):
+                return [
+                    n for n in names
+                    if _include_vanilla or n.lower() not in self._vanilla_plugins
+                ]
+            _before = _visible(plugin_names)
+            _after = _visible(result.sorted_names)
+            visible_moved = sum(
+                1 for i, n in enumerate(_after)
+                if i >= len(_before) or _before[i] != n
+            )
+
+            if visible_moved == 0 and not locked_indices:
+                self._log("Load order is already sorted.")
+                self._refresh_plugins_tab()
+                _done_notif = CTkNotification(
+                    self.winfo_toplevel(),
+                    state="info",
+                    message="Load order is already sorted",
+                )
+                self.after(4000, lambda n=_done_notif: n.winfo_exists() and n.destroy())
+                return
+
+            self._plugin_entries = new_entries
             write_plugins(self._plugins_path, [
                 e for e in new_entries
                 if _include_vanilla or e.name.lower() not in self._vanilla_plugins
@@ -296,8 +313,8 @@ class PluginPanelLOOTMixin:
                 self._plugins_path.parent / "loadorder.txt", new_entries,
             )
             self._refresh_plugins_tab()
-            self._log(f"Sorted — {result.moved_count} plugin(s) changed position.")
-            _moved = result.moved_count
+            self._log(f"Sorted — {visible_moved} plugin(s) changed position.")
+            _moved = visible_moved
             _done_notif = CTkNotification(
                 self.winfo_toplevel(),
                 state="success",
