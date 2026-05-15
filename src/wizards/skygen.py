@@ -950,12 +950,12 @@ class SkyGenWizard(ctk.CTkFrame):
         )
         ctk.CTkLabel(
             self._body, text=info,
-            font=FONT_NORMAL, text_color=TEXT_DIM, justify="left", wraplength=380,
+            font=FONT_NORMAL, text_color=TEXT_DIM, justify="left", wraplength=760,
         ).pack(pady=(0, 12), fill="x")
 
         self._scan_status = ctk.CTkLabel(
             self._body, text="Ready to scan.",
-            font=FONT_NORMAL, text_color=TEXT_DIM, justify="center", wraplength=380,
+            font=FONT_NORMAL, text_color=TEXT_DIM, justify="center", wraplength=760,
         )
         self._scan_status.pack(pady=(0, 6))
 
@@ -1186,7 +1186,7 @@ class SkyGenWizard(ctk.CTkFrame):
                 f"\n  \u2022 BOS:  SKSE/Plugins/Data/Base Object Swapper/"
                 f"\n  \u2022 SkyPatcher:  SKSE/Plugins/SkyPatcher/"
             ),
-            font=FONT_NORMAL, text_color=TEXT_DIM, justify="left", wraplength=380,
+            font=FONT_NORMAL, text_color=TEXT_DIM, justify="left", wraplength=760,
         ).pack(fill="x", pady=(0, 12))
 
         # Select / Deselect buttons
@@ -1220,7 +1220,7 @@ class SkyGenWizard(ctk.CTkFrame):
 
         self._gen_status = ctk.CTkLabel(
             self._body, text="",
-            font=FONT_NORMAL, text_color=TEXT_DIM, justify="center", wraplength=380,
+            font=FONT_NORMAL, text_color=TEXT_DIM, justify="center", wraplength=760,
         )
         self._gen_status.pack(pady=(0, 4))
 
@@ -1556,7 +1556,7 @@ class SkyGenWizard(ctk.CTkFrame):
                 f"\n\nOutput mod:  {out_dir.name}"
                 f"\n{out_dir}"
             ),
-            font=FONT_NORMAL, text_color=TEXT_DIM, justify="left", wraplength=380,
+            font=FONT_NORMAL, text_color=TEXT_DIM, justify="left", wraplength=760,
         ).pack(pady=(0, 12))
 
         # Open output folder

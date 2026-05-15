@@ -571,13 +571,13 @@ class PluginAuditWizard(ctk.CTkFrame):
                 "\n  \u2022 Orphaned INI cleanup — removes BOS/SkyPatcher INIs for"
                 "\n    plugins that cannot be disabled"
             ),
-            font=FONT_NORMAL, text_color=TEXT_DIM, justify="left", wraplength=380,
+            font=FONT_NORMAL, text_color=TEXT_DIM, justify="left", wraplength=760,
         ).pack(pady=(0, 12), fill="x")
 
         self._log_var = ctk.StringVar(value="Ready.")
         ctk.CTkLabel(
             self._body, textvariable=self._log_var,
-            font=FONT_NORMAL, text_color=TEXT_DIM, wraplength=380,
+            font=FONT_NORMAL, text_color=TEXT_DIM, wraplength=760,
         ).pack(pady=(0, 6))
 
         self._progress = ctk.CTkProgressBar(self._body)
@@ -796,7 +796,7 @@ class PluginAuditWizard(ctk.CTkFrame):
                     "None of your active plugins have a BOS, SkyPatcher, SPID, KID, "
                     "DSD, or OAR patch that replaces their function."
                 ),
-                font=FONT_NORMAL, text_color=TEXT_DIM, justify="left", wraplength=380,
+                font=FONT_NORMAL, text_color=TEXT_DIM, justify="left", wraplength=760,
             ).pack(pady=20)
         else:
             # Scrollable list
@@ -1156,7 +1156,7 @@ class PluginAuditWizard(ctk.CTkFrame):
                 if deleted
                 else "No matching INI files were found for the blocked plugins."
             ),
-            font=FONT_NORMAL, text_color=TEXT_DIM, wraplength=380,
+            font=FONT_NORMAL, text_color=TEXT_DIM, wraplength=760,
         ).pack(pady=(0, 16))
 
         ctk.CTkButton(
