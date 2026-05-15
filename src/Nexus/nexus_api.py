@@ -444,6 +444,7 @@ class NexusAPI:
         self._cached_user: "NexusUser | None" = None
         self._cached_user_ts: float = 0.0
         self._oauth_tokens = None
+        self._game_id_cache: dict[str, int] = {}
         self._session = requests.Session()
         self._session.headers.update({
             "APIKEY": self._key,
@@ -477,6 +478,7 @@ class NexusAPI:
         instance._cached_user = None
         instance._cached_user_ts = 0.0
         instance._oauth_tokens = tokens
+        instance._game_id_cache = {}
         instance._session = requests.Session()
         instance._session.headers.update({
             "Authorization": f"Bearer {tokens.access_token}",
@@ -919,9 +921,108 @@ class NexusAPI:
 
     # -- Files --------------------------------------------------------------
 
+    def _resolve_game_id(self, game_domain: str) -> int:
+        """Return the numeric Nexus game ID for a domain, cached per session.
+
+        Returns 0 on failure (caller should fall back to REST).
+        """
+        cached = self._game_id_cache.get(game_domain)
+        if cached is not None:
+            return cached
+        try:
+            resp = self._session.post(
+                GRAPHQL_BASE,
+                json={"query": f'{{ game(domainName: "{game_domain}") {{ id }} }}'},
+                timeout=self._timeout,
+            )
+            if not resp.ok:
+                return 0
+            payload = resp.json()
+            if "errors" in payload:
+                return 0
+            gid = int(
+                ((payload.get("data") or {}).get("game") or {}).get("id") or 0
+            )
+        except Exception:
+            return 0
+        if gid:
+            self._game_id_cache[game_domain] = gid
+        return gid
+
     def get_mod_files(self, game_domain: str,
                       mod_id: int) -> NexusModFiles:
-        """List all files uploaded for a mod."""
+        """List all files uploaded for a mod.
+
+        Prefers GraphQL ``modFiles(gameId, modId)`` because Nexus's REST
+        endpoint ``/games/{domain}/mods/{id}/files`` can return files for a
+        different mod entirely on some games (e.g. subnautica2 mod 20 returns
+        files from subnautica mod 220). GraphQL disambiguates via the numeric
+        gameId and is rate-limit-free; REST remains as a fallback.
+        """
+        game_id = self._resolve_game_id(game_domain)
+        if game_id:
+            try:
+                query = (
+                    f"query ModFiles {{\n"
+                    f"  modFiles(gameId: {game_id}, modId: {mod_id}) {{\n"
+                    f"    fileId name version description\n"
+                    f"    categoryId category\n"
+                    f"    sizeInBytes date uri\n"
+                    f"  }}\n"
+                    f"}}"
+                )
+                resp = self._session.post(
+                    GRAPHQL_BASE,
+                    json={"query": query},
+                    timeout=self._timeout,
+                )
+                self._log_response("POST", "GraphQL modFiles", resp)
+                if resp.ok:
+                    payload = resp.json()
+                    entries = (
+                        (payload.get("data") or {}).get("modFiles")
+                    )
+                    if entries is not None and "errors" not in payload:
+                        files: list[NexusModFile] = []
+                        for entry in entries:
+                            try:
+                                fid = int(entry.get("fileId") or 0)
+                            except (TypeError, ValueError):
+                                fid = 0
+                            if not fid:
+                                continue
+                            cat_raw = entry.get("category")
+                            if isinstance(cat_raw, dict):
+                                cat_name = (cat_raw.get("name") or "").strip()
+                            elif isinstance(cat_raw, str):
+                                cat_name = cat_raw.strip()
+                            else:
+                                cat_name = ""
+                            try:
+                                ts = int(entry.get("date") or 0)
+                            except (TypeError, ValueError):
+                                ts = 0
+                            try:
+                                sz = int(entry.get("sizeInBytes") or 0)
+                            except (TypeError, ValueError):
+                                sz = 0
+                            files.append(NexusModFile(
+                                file_id=fid,
+                                name=entry.get("name", "") or "",
+                                version=entry.get("version", "") or "",
+                                category_name=cat_name,
+                                file_name=entry.get("uri", "") or "",
+                                size_in_bytes=sz or None,
+                                size_kb=(sz // 1024) if sz else 0,
+                                mod_version="",
+                                description=entry.get("description", "") or "",
+                                uploaded_timestamp=ts,
+                                is_primary=(cat_name == "MAIN"),
+                            ))
+                        return NexusModFiles(files=files, file_updates=[])
+            except Exception as exc:
+                app_log(f"GraphQL modFiles error for {game_domain}/{mod_id}: {exc} — falling back to REST")
+
         data = self._get(f"/games/{game_domain}/mods/{mod_id}/files")
         files = [
             NexusModFile(
@@ -1408,34 +1509,7 @@ class NexusAPI:
         if not mod_ids:
             return {}
 
-        try:
-            gid_resp = self._session.post(
-                GRAPHQL_BASE,
-                json={"query": f'{{ game(domainName: "{game_domain}") {{ id }} }}'},
-                timeout=self._timeout,
-            )
-            if not gid_resp.ok:
-                app_log(
-                    f"GraphQL modFilesBatch: game ID lookup HTTP {gid_resp.status_code} "
-                    f"for {game_domain!r} — falling back to REST"
-                )
-                return {}
-            gid_payload = gid_resp.json()
-            if "errors" in gid_payload:
-                app_log(
-                    f"GraphQL modFilesBatch: game ID lookup errors for {game_domain!r}: "
-                    f"{gid_payload['errors']} — falling back to REST"
-                )
-                return {}
-            game_id = int(
-                ((gid_payload.get("data") or {}).get("game") or {}).get("id") or 0
-            )
-        except Exception as exc:
-            app_log(
-                f"GraphQL modFilesBatch: game ID lookup raised for {game_domain!r}: "
-                f"{exc} — falling back to REST"
-            )
-            return {}
+        game_id = self._resolve_game_id(game_domain)
         if not game_id:
             app_log(f"GraphQL modFilesBatch: could not resolve game ID for {game_domain!r}")
             return {}
