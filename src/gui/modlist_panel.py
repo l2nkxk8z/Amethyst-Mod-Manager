@@ -514,23 +514,27 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
 
         # Search/filter
         self._filter_text: str = ""
-        self._filter_show_disabled: bool = False
-        self._filter_show_enabled: bool = False
-        self._filter_hide_separators: bool = False
-        self._filter_conflict_winning: bool = False
-        self._filter_conflict_losing: bool = False
-        self._filter_conflict_partial: bool = False
-        self._filter_conflict_full: bool = False
-        self._filter_missing_reqs: bool = False
-        self._filter_has_disabled_plugins: bool = False
-        self._filter_has_plugins: bool = False
-        self._filter_has_disabled_files: bool = False
-        self._filter_has_updates: bool = False
-        self._filter_fomod_only: bool = False
-        self._filter_has_bsa: bool = False
-        self._filter_categories: frozenset[str] = frozenset()  # when non-empty, show only these categories
-        self._filter_filetypes: frozenset[str] = frozenset()   # when non-empty, show only mods containing these extensions
-        self._filter_has_notes: bool = False
+        # Tri-state filter flags: 0 = off, 1 = include (show only matches),
+        # 2 = exclude (hide matches). Truthy == active either way.
+        self._filter_show_disabled: int = 0
+        self._filter_show_enabled: int = 0
+        self._filter_hide_separators: int = 0
+        self._filter_conflict_winning: int = 0
+        self._filter_conflict_losing: int = 0
+        self._filter_conflict_partial: int = 0
+        self._filter_conflict_full: int = 0
+        self._filter_missing_reqs: int = 0
+        self._filter_has_disabled_plugins: int = 0
+        self._filter_has_plugins: int = 0
+        self._filter_has_disabled_files: int = 0
+        self._filter_has_updates: int = 0
+        self._filter_fomod_only: int = 0
+        self._filter_has_bsa: int = 0
+        self._filter_categories: frozenset[str] = frozenset()         # include-only categories
+        self._filter_categories_exclude: frozenset[str] = frozenset() # categories to hide
+        self._filter_filetypes: frozenset[str] = frozenset()
+        self._filter_filetypes_exclude: frozenset[str] = frozenset()
+        self._filter_has_notes: int = 0
         self._disabled_plugins_map: dict[str, list[str]] = {}  # mod_name → [plugin, ...]
         self._excluded_mod_files_map: dict[str, list[str]] = {}  # mod_name → [rel_key, ...]
         self._mod_notes_map: dict[str, str] = {}  # mod_name → note text (profile_state.json)
@@ -2724,54 +2728,78 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
                 else:
                     base.append(i)
 
-        # Step 2: hide separators filter (keep synthetic Overwrite/Root Folder rows)
-        if self._filter_hide_separators:
+        # Step 2: hide separators filter (keep synthetic Overwrite/Root Folder rows).
+        # Tri-state: include = hide separators; exclude = SHOW separators (no-op,
+        # since separators are visible by default anyway).
+        if self._filter_hide_separators == 1:
             base = [i for i in base
                     if not self._entries[i].is_separator
                     or self._entries[i].name in (OVERWRITE_NAME, ROOT_FOLDER_NAME)]
 
-        # Step 3: enabled/disabled filter (mutually exclusive — both/neither = off)
-        if self._filter_show_disabled and not self._filter_show_enabled:
+        # Step 3: enabled/disabled filter (tri-state per side).
+        # Include "show only enabled" ≡ exclude "show only disabled" and vice versa,
+        # so we evaluate each side independently rather than picking a winner.
+        if self._filter_show_disabled == 1:
             base = self._apply_filter(
                 base, lambda e: not e.enabled, self._sep_block_has_disabled,
             )
-        elif self._filter_show_enabled and not self._filter_show_disabled:
+        elif self._filter_show_disabled == 2:
+            base = self._exclude_filter(base, lambda e: not e.enabled)
+        if self._filter_show_enabled == 1:
             base = self._apply_filter(
                 base, lambda e: e.enabled, self._sep_block_has_enabled,
             )
+        elif self._filter_show_enabled == 2:
+            base = self._exclude_filter(base, lambda e: e.enabled)
 
-        # Step 4: conflict-type filter — combines four sub-flags into one allowed set.
-        if (self._filter_conflict_winning or self._filter_conflict_losing
-                or self._filter_conflict_partial or self._filter_conflict_full):
-            allowed: set = set()
-            if self._filter_conflict_winning: allowed.add(CONFLICT_WINS)
-            if self._filter_conflict_losing:  allowed.add(CONFLICT_LOSES)
-            if self._filter_conflict_partial: allowed.add(CONFLICT_PARTIAL)
-            if self._filter_conflict_full:    allowed.add(CONFLICT_FULL)
-            cmap, bmap = self._conflict_map, self._bsa_conflict_map
+        # Step 4: conflict-type filter — handle include + exclude sets separately.
+        include_conflicts: set = set()
+        exclude_conflicts: set = set()
+        for state, kind in (
+            (self._filter_conflict_winning, CONFLICT_WINS),
+            (self._filter_conflict_losing,  CONFLICT_LOSES),
+            (self._filter_conflict_partial, CONFLICT_PARTIAL),
+            (self._filter_conflict_full,    CONFLICT_FULL),
+        ):
+            if state == 1:
+                include_conflicts.add(kind)
+            elif state == 2:
+                exclude_conflicts.add(kind)
+        cmap, bmap = self._conflict_map, self._bsa_conflict_map
+        if include_conflicts:
             base = self._apply_filter(
                 base,
-                lambda e: (cmap.get(e.name, CONFLICT_NONE) in allowed
-                           or bmap.get(e.name, CONFLICT_NONE) in allowed),
-                lambda i: self._sep_block_has_conflict_in(i, allowed),
+                lambda e: (cmap.get(e.name, CONFLICT_NONE) in include_conflicts
+                           or bmap.get(e.name, CONFLICT_NONE) in include_conflicts),
+                lambda i: self._sep_block_has_conflict_in(i, include_conflicts),
+            )
+        if exclude_conflicts:
+            base = self._exclude_filter(
+                base,
+                lambda e: (cmap.get(e.name, CONFLICT_NONE) in exclude_conflicts
+                           or bmap.get(e.name, CONFLICT_NONE) in exclude_conflicts),
             )
 
         # Steps 4b–4e3: simple flag-driven filters with optional precomputed mods set.
-        # Spec: (flag attr, mod predicate factory, sep predicate factory, mods_set source)
-        # mods_set source returns None when no precompute is needed; an empty set means
-        # "filter is active but data isn't ready, so show nothing" (clears base entirely).
+        # Each attr is now tri-state. Include uses the original predicate; exclude
+        # inverts the mod predicate and leaves separators alone.
         for attr, mods_factory, mod_pred_fn, sep_pred_fn in self._SIMPLE_FILTER_SPECS:
-            if not getattr(self, attr):
+            state = getattr(self, attr)
+            if not state:
                 continue
             mods_set = mods_factory(self) if mods_factory else None
             if mods_set is not None and not mods_set:
-                base = []
+                # No mods match. Include → show nothing; Exclude → no-op.
+                if state == 1:
+                    base = []
                 continue
-            base = self._apply_filter(
-                base, mod_pred_fn(self, mods_set), sep_pred_fn(self, mods_set),
-            )
+            mod_pred = mod_pred_fn(self, mods_set)
+            if state == 1:
+                base = self._apply_filter(base, mod_pred, sep_pred_fn(self, mods_set))
+            else:
+                base = self._exclude_filter(base, mod_pred)
 
-        # Step 4f: category filter — driven by a non-empty frozenset, not a bool.
+        # Step 4f: category filter — include and exclude sets are independent.
         if self._filter_categories:
             allowed_cats = self._filter_categories
             cats = self._category_names
@@ -2780,8 +2808,15 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
                 lambda e: (cats.get(e.name, "") or "") in allowed_cats,
                 lambda i: self._sep_block_has_category(i, allowed_cats),
             )
+        if self._filter_categories_exclude:
+            blocked_cats = self._filter_categories_exclude
+            cats = self._category_names
+            base = self._exclude_filter(
+                base,
+                lambda e: (cats.get(e.name, "") or "") in blocked_cats,
+            )
 
-        # Step 4g: filetype filter — frozenset of extensions (lowercase, with dot).
+        # Step 4g: filetype filter — include and exclude sets are independent.
         if self._filter_filetypes:
             mods_set = self._get_mods_with_filetypes(self._filter_filetypes)
             if not mods_set:
@@ -2792,6 +2827,10 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
                     lambda e: e.name in mods_set,
                     lambda i: self._sep_block_has_filetypes(i, mods_set),
                 )
+        if self._filter_filetypes_exclude:
+            ex_mods = self._get_mods_with_filetypes(self._filter_filetypes_exclude)
+            if ex_mods:
+                base = self._exclude_filter(base, lambda e: e.name in ex_mods)
 
         # Step 5: apply column sort (visual only)
         if self._sort_column is not None:
@@ -2808,6 +2847,21 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
                 if sep_pred(i):
                     result.append(i)
             elif mod_pred(entry):
+                result.append(i)
+        return result
+
+    def _exclude_filter(self, base: list[int], mod_pred) -> list[int]:
+        """Tri-state EXCLUDE step: drop mods matching `mod_pred(entry)`.
+
+        Separators are always retained (they're filtered elsewhere) — an
+        exclude filter has no concept of "block has any matching mod".
+        """
+        result = []
+        for i in base:
+            entry = self._entries[i]
+            if entry.is_separator:
+                result.append(i)
+            elif not mod_pred(entry):
                 result.append(i)
         return result
 
