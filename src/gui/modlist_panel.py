@@ -5188,7 +5188,7 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
             "deploy_paths": deploy_paths_changed,
         }
 
-    def _remove_mod(self, idx: int):
+    def _remove_mod(self, idx: int, skip_confirm: bool = False):
         if not (0 <= idx < len(self._entries)):
             return
         entry = self._entries[idx]
@@ -5207,30 +5207,34 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
                 self._variant_name_of(i) or self._entries[i].name
                 for i in sorted(bundle_indices)
             )
-            alert = CTkAlert(
-                state="warning",
-                title="Remove Bundle",
-                body_text=(
-                    f"Remove all variants of bundle '{bundle_name}'?\n\n"
-                    f"Variants: {variant_labels}\n\n"
-                    "This will delete all variant folders and cannot be undone."
-                ),
-                btn1="Remove",
-                btn2="Cancel",
-                parent=self.winfo_toplevel(),
-            )
+            if not skip_confirm:
+                alert = CTkAlert(
+                    state="warning",
+                    title="Remove Bundle",
+                    body_text=(
+                        f"Remove all variants of bundle '{bundle_name}'?\n\n"
+                        f"Variants: {variant_labels}\n\n"
+                        "This will delete all variant folders and cannot be undone."
+                    ),
+                    btn1="Remove",
+                    btn2="Cancel",
+                    parent=self.winfo_toplevel(),
+                )
+                if alert.get() != "Remove":
+                    return
         else:
             bundle_indices = [idx]
-            alert = CTkAlert(
-                state="warning",
-                title="Remove Mod",
-                body_text=f"Are you sure you want to remove '{entry.name}'?\n\nThis will delete the mod folder and cannot be undone.",
-                btn1="Remove",
-                btn2="Cancel",
-                parent=self.winfo_toplevel(),
-            )
-        if alert.get() != "Remove":
-            return
+            if not skip_confirm:
+                alert = CTkAlert(
+                    state="warning",
+                    title="Remove Mod",
+                    body_text=f"Are you sure you want to remove '{entry.name}'?\n\nThis will delete the mod folder and cannot be undone.",
+                    btn1="Remove",
+                    btn2="Cancel",
+                    parent=self.winfo_toplevel(),
+                )
+                if alert.get() != "Remove":
+                    return
         # Delete staging folders and drop from index — process highest index first
         # so earlier indices remain valid while popping.
         removed_names: list[str] = []

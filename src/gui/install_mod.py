@@ -844,24 +844,27 @@ def _copy_file_list(file_list: list[tuple[str, str, bool]],
 FOMOD_DEFERRED = "__FOMOD_DEFERRED__"
 
 
-def _fire_on_installed(cb, is_fomod: bool = False) -> None:
+def _fire_on_installed(cb, is_fomod: bool = False,
+                       installed_mod_name: str | None = None) -> None:
     """Invoke an `on_installed` callback with backwards-compatible signature.
 
-    Callers may supply either a no-arg callable or one that accepts an
-    `is_fomod` keyword. Try the richer form first, then fall back."""
+    Callers may supply a no-arg callable, one that accepts ``is_fomod``,
+    or one that also accepts ``installed_mod_name``. Try the richest form
+    first, then fall back."""
     if cb is None:
         return
-    try:
-        cb(is_fomod=is_fomod)
-        return
-    except TypeError:
-        pass
-    except Exception:
-        return
-    try:
-        cb()
-    except Exception:
-        pass
+    for kwargs in (
+        {"is_fomod": is_fomod, "installed_mod_name": installed_mod_name},
+        {"is_fomod": is_fomod},
+        {},
+    ):
+        try:
+            cb(**kwargs)
+            return
+        except TypeError:
+            continue
+        except Exception:
+            return
 
 
 def _maybe_queue_rename_after_install(parent_window, mod_panel, headless: bool,
@@ -1034,7 +1037,8 @@ def install_mod_from_archive(archive_path: str, parent_window, log_fn,
             _show_mod_notification(parent_window, f"Installed: {mod_name}")
 
             # Disable-extract path never runs a FOMOD installer.
-            _fire_on_installed(on_installed, is_fomod=False)
+            _fire_on_installed(on_installed, is_fomod=False,
+                               installed_mod_name=mod_name)
 
             if mod_panel is not None:
                 mod_panel.after(0, mod_panel.reload_after_install)
@@ -1741,7 +1745,8 @@ def install_mod_from_archive(archive_path: str, parent_window, log_fn,
             log_fn(f"Installed bundle '{bundle_name}' ({len(variants)} variant(s)).")
             if not headless:
                 _show_mod_notification(parent_window, f"Installed bundle: {bundle_name}")
-            _fire_on_installed(on_installed, is_fomod=False)
+            _fire_on_installed(on_installed, is_fomod=False,
+                               installed_mod_name=bundle_name)
             if mod_panel is not None and not headless:
                 mod_panel.after(0, mod_panel.reload_after_install)
             # Bundles install one separator + N variants — renaming the
@@ -1831,7 +1836,8 @@ def install_mod_from_archive(archive_path: str, parent_window, log_fn,
             log_fn(f"Installed {len(multi_mods)} mod(s) from archive.")
             if not headless:
                 _show_mod_notification(parent_window, f"Installed {len(multi_mods)} mods")
-            _fire_on_installed(on_installed, is_fomod=False)
+            _fire_on_installed(on_installed, is_fomod=False,
+                               installed_mod_name=(installed_names[0] if installed_names else mod_name))
             if mod_panel is not None and not headless:
                 mod_panel.after(0, mod_panel.reload_after_install)
             return installed_names[0] if installed_names else mod_name
@@ -2179,7 +2185,8 @@ def install_mod_from_archive(archive_path: str, parent_window, log_fn,
         if not headless:
             _show_mod_notification(parent_window, f"Installed: {mod_name}")
 
-        _fire_on_installed(on_installed, is_fomod=is_fomod_install)
+        _fire_on_installed(on_installed, is_fomod=is_fomod_install,
+                           installed_mod_name=mod_name)
 
         if mod_panel is not None and not headless:
             mod_panel.after(0, mod_panel.reload_after_install)

@@ -1,5 +1,11 @@
 - v1.3.7
 - Reworked Archive Invalidation for some bethesda games, Uses a dummy bsa file to make the gamebryo engine load loose files
+- Fixed a bug where removing the root folder install flag from a mod after deploying would send the mod to overwrite when restoring.
+- Fixed arrows not appearing in the archive tab treeview
+- Tweaked the update checker to reduce rare false positives
+- The change version menu now highlights name matched files to make them more visible
+- When updating a mod, if the name of the new mod has changed a prompt now appears to delete the old mod and the new mod is installed to the position of the old one.
+- The missing requirements menu separates required/optional mods by keywords in their description
 
 - v1.3.6
 - Tweaked Bethesda game routing rules to stop some dll files incorrectly being sent to the root folder
