@@ -36,6 +36,100 @@ LogFn = Callable[[str], None]
 ProgressFn = Callable[[int, int, Optional[str]], None]
 
 
+def _fs_id(path: Path) -> "int | None":
+    """Return the device id for *path* (or its nearest existing parent).
+
+    Used to detect up-front when the game directory and the mod staging live
+    on different filesystems — the single most common cause of hardlink
+    deploys silently falling back to copy/symlink.
+    """
+    p = path
+    for _ in range(40):
+        try:
+            return p.stat().st_dev
+        except OSError:
+            if p.parent == p:
+                return None
+            p = p.parent
+    return None
+
+
+def _count_enabled_mods(profile_dir: Path) -> "tuple[int, int]":
+    """Return (enabled_mods, separators) from the profile's modlist.txt."""
+    try:
+        from Utils.modlist import read_modlist
+        entries = read_modlist(profile_dir / "modlist.txt")
+    except Exception:
+        return (0, 0)
+    enabled = sum(1 for e in entries if e.enabled and not e.is_separator)
+    seps = sum(1 for e in entries if e.is_separator)
+    return (enabled, seps)
+
+
+def _safe(fn, default=None):
+    try:
+        return fn()
+    except Exception:
+        return default
+
+
+def _log_deploy_context(game, profile: str, profile_dir: Path,
+                        deploy_mode: "LinkMode", *, log_fn: LogFn) -> None:
+    """Emit a diagnostic header describing the full deploy environment.
+
+    Logged once at the start of every deploy (all games) so a saved log
+    contains everything needed to diagnose a failure without re-running:
+    app version, game + paths, prefix, staging, deploy mode, profile, mod
+    counts, and a same-filesystem check for hardlink viability.
+    """
+    try:
+        from version import __version__ as app_version
+    except Exception:
+        app_version = "?"
+
+    import platform
+
+    game_root  = _safe(game.get_game_path)
+    staging    = _safe(game.get_effective_mod_staging_path)
+    filemap    = _safe(game.get_effective_filemap_path)
+    data_path  = _safe(game.get_mod_data_path)
+    prefix     = _safe(game.get_prefix_path)
+    last_dep   = _safe(game.get_last_deployed_profile)
+    enabled, seps = _count_enabled_mods(profile_dir)
+
+    log_fn("=" * 60)
+    log_fn(f"Deploy: {game.name} — profile '{profile}'")
+    log_fn(f"  Mod Manager {app_version} on {platform.system()} "
+           f"{platform.release()}")
+    log_fn(f"  Deploy mode:   {deploy_mode.name}")
+    log_fn(f"  Game path:     {game_root or '(not set)'}")
+    if data_path is not None and data_path != game_root:
+        log_fn(f"  Mod data dir:  {data_path}")
+    if prefix:
+        log_fn(f"  Proton prefix: {prefix}")
+    log_fn(f"  Staging:       {staging or '(unknown)'}")
+    log_fn(f"  Filemap:       {filemap or '(unknown)'}")
+    log_fn(f"  Enabled mods:  {enabled}" +
+           (f"  ({seps} separator(s))" if seps else ""))
+    if last_dep and last_dep != profile:
+        log_fn(f"  Last deployed: profile '{last_dep}'")
+
+    # Hardlink viability: compare the filesystem of the deploy destination
+    # against the staging folder. Different devices ⇒ hardlinks will fall
+    # back to symlink/copy. Warn proactively rather than after-the-fact.
+    if deploy_mode is LinkMode.HARDLINK and staging is not None:
+        dest = data_path or game_root
+        if dest is not None:
+            dev_dest = _fs_id(Path(dest))
+            dev_stg  = _fs_id(Path(staging))
+            if dev_dest is not None and dev_stg is not None and dev_dest != dev_stg:
+                log_fn("  WARNING: game and mod staging are on DIFFERENT "
+                       "filesystems — hardlinks will fall back to "
+                       "symlink/copy (uses extra disk space; symlinks can "
+                       "break some games).")
+    log_fn("=" * 60)
+
+
 def _make_ue5_conflict_key_fn(game, index_path: Path):
     """Build a (mod_name, rel_key) → ck callback for UE5 conflict detection.
 
@@ -181,6 +275,9 @@ def run_deploy_pipeline(
     """
     game_root = game.get_game_path()
 
+    import time as _time
+    _t_start = _time.perf_counter()
+
     try:
         # Restore against the last-deployed profile so runtime files (saves,
         # ShaderCache, etc.) land in *that* profile's overwrite/ folder.
@@ -227,6 +324,8 @@ def run_deploy_pipeline(
             if hasattr(game, "get_deploy_mode")
             else LinkMode.HARDLINK
         )
+        _log_deploy_context(game, profile, profile_dir, deploy_mode,
+                            log_fn=log_fn)
         if progress_fn is not None:
             game.deploy(log_fn=log_fn, profile=profile, progress_fn=progress_fn,
                         mode=deploy_mode)
@@ -282,9 +381,12 @@ def run_deploy_pipeline(
         if hasattr(game, "swap_launcher"):
             game.swap_launcher(log_fn)
 
+        log_fn(f"Deploy finished OK in {_time.perf_counter() - _t_start:.1f}s "
+               f"— profile '{profile}'.")
         return True
     except Exception as e:
-        log_fn(f"Deploy error: {e}\n{traceback.format_exc()}")
+        log_fn(f"Deploy FAILED after {_time.perf_counter() - _t_start:.1f}s: "
+               f"{e}\n{traceback.format_exc()}")
         return False
     finally:
         game.set_active_profile_dir(

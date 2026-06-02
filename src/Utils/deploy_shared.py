@@ -797,28 +797,38 @@ def _do_link(src: str, dst: str, mode: LinkMode) -> OSError | None:
     whose game is on a different drive from their mod staging would see
     per-file WARN lines and silently broken deployments.
     """
+    return _do_link_ex(src, dst, mode)[1]
+
+
+def _do_link_ex(src: str, dst: str, mode: LinkMode) -> tuple["LinkMode | None", OSError | None]:
+    """Like _do_link but also reports the mode that actually succeeded.
+
+    Returns (effective_mode, None) on success — effective_mode reflects the
+    real transfer used after any hardlink → symlink → copy fallback, so the
+    caller can report a per-mode breakdown. Returns (None, OSError) on failure.
+    """
     try:
         if mode is LinkMode.HARDLINK:
             try:
                 os.link(src, dst)
-                return None
+                return LinkMode.HARDLINK, None
             except OSError as exc:
                 if exc.errno not in _HARDLINK_FALLBACK_ERRNOS:
-                    return exc
+                    return None, exc
                 _notify_hardlink_fallback(exc)
             try:
                 os.symlink(src, dst)
-                return None
+                return LinkMode.SYMLINK, None
             except OSError:
                 shutil.copy2(src, dst)
-                return None
+                return LinkMode.COPY, None
         if mode is LinkMode.SYMLINK:
             os.symlink(src, dst)
         else:
             shutil.copy2(src, dst)
-        return None
+        return mode, None
     except OSError as e:
-        return e
+        return None, e
 
 
 def _restore_from_log(
@@ -1406,6 +1416,7 @@ __all__ = [
     "_OVERWRITE_NAME",
     "_resolve_source",
     "_do_link",
+    "_do_link_ex",
     "_restore_from_log",
     "_prebuild_mod_indexes",
     "_resolve_root_path",

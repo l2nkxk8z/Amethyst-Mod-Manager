@@ -22,6 +22,7 @@ from Utils.deploy_shared import (
     _default_core,
     _deploy_workers,
     _do_link,
+    _do_link_ex,
     _get_staging_source_path,
     _mkdir_leaves,
     _path_under_root,
@@ -30,6 +31,31 @@ from Utils.deploy_shared import (
     _resolve_source,
     _timer,
 )
+
+
+def _report_mode_breakdown(_log, mode_counts: "dict[LinkMode, int]",
+                           requested: "LinkMode") -> None:
+    """Log how files were actually transferred, flagging hardlink fallbacks.
+
+    Only prints a breakdown when the effective modes differ from what was
+    requested — e.g. a HARDLINK deploy that silently fell back to symlink/copy
+    because the game and staging are on different filesystems.
+    """
+    if not mode_counts:
+        return
+    used = {m for m, n in mode_counts.items() if n}
+    if used == {requested}:
+        return
+    parts = ", ".join(
+        f"{n} {m.name.lower()}"
+        for m, n in sorted(mode_counts.items(), key=lambda kv: kv[0].name)
+        if n
+    )
+    _log(f"  Transfer methods: {parts}.")
+    if requested is LinkMode.HARDLINK and used - {LinkMode.HARDLINK}:
+        _log("  Note: some files could not be hardlinked (game and mod "
+             "staging are likely on different filesystems) — fell back to "
+             "symlink/copy.")
 
 
 class CoreBackupConflictError(RuntimeError):
@@ -497,7 +523,7 @@ def deploy_filemap(
     linked = 0
     done_count = 0
 
-    def _do_transfer(item: tuple[str, str, str, bool, bool, "LinkMode | None"]) -> tuple[str | None, tuple[str, OSError] | None]:
+    def _do_transfer(item: tuple[str, str, str, bool, bool, "LinkMode | None"]) -> tuple[str | None, "LinkMode | None", tuple[str, OSError] | None]:
         src, dst, rel_lower, _is_custom, use_symlink, override_mode = item
         if use_symlink:
             effective_mode = LinkMode.SYMLINK
@@ -505,24 +531,32 @@ def deploy_filemap(
             effective_mode = override_mode
         else:
             effective_mode = mode
-        err = _do_link(src, dst, effective_mode)
+        actual, err = _do_link_ex(src, dst, effective_mode)
         if err is None:
-            return rel_lower, None
-        return None, (dst, err)
+            return rel_lower, actual, None
+        return None, None, (dst, err)
 
+    # Per-mode tally so we can report when files were copied/symlinked instead
+    # of hardlinked (a common cause of "mods not loading" when game and staging
+    # live on different filesystems).
+    mode_counts: dict[LinkMode, int] = {}
     _t_transfer = _time.perf_counter()
     with concurrent.futures.ThreadPoolExecutor(max_workers=_deploy_workers()) as pool:
-        for result, err in pool.map(_do_transfer, tasks):
+        for result, actual, err in pool.map(_do_transfer, tasks):
             done_count += 1
             if result is not None:
                 placed_lower.add(result)
                 linked += 1
+                if actual is not None:
+                    mode_counts[actual] = mode_counts.get(actual, 0) + 1
             elif err is not None:
                 dst_err, exc = err
                 _log(f"  WARN: could not transfer {dst_err}: {exc}")
             if progress_fn is not None and (done_count % 200 == 0 or done_count == total):
                 progress_fn(done_count, total)
     print(f"  [TIMER] deploy_filemap — transfer {total} files: {_time.perf_counter() - _t_transfer:.3f}s")
+
+    _report_mode_breakdown(_log, mode_counts, mode)
 
     # Write a log of files placed in custom locations so cleanup knows what to
     # remove.  Each line is the absolute path of a deployed file (or a
@@ -613,22 +647,26 @@ def deploy_core(
     linked = 0
     done_count = 0
 
-    def _do_core(item: tuple[str, str]) -> tuple[bool, str, OSError | None]:
+    def _do_core(item: tuple[str, str]) -> tuple["LinkMode | None", str, OSError | None]:
         src, dst_str = item
-        err = _do_link(src, dst_str, mode)
-        return (True, dst_str, None) if err is None else (False, dst_str, err)
+        actual, err = _do_link_ex(src, dst_str, mode)
+        return (actual, dst_str, None) if err is None else (None, dst_str, err)
 
+    mode_counts: dict[LinkMode, int] = {}
     _t_core_transfer = _time.perf_counter()
     with concurrent.futures.ThreadPoolExecutor(max_workers=_deploy_workers()) as pool:
-        for ok, rel_str, exc in pool.map(_do_core, resolved_tasks):
+        for actual, rel_str, exc in pool.map(_do_core, resolved_tasks):
             done_count += 1
-            if ok:
+            if actual is not None:
                 linked += 1
+                mode_counts[actual] = mode_counts.get(actual, 0) + 1
             else:
                 _log(f"  WARN: could not transfer {rel_str}: {exc}")
             if progress_fn is not None:
                 progress_fn(done_count, total)
     print(f"  [TIMER] deploy_core — transfer {total} files: {_time.perf_counter() - _t_core_transfer:.3f}s")
+
+    _report_mode_breakdown(_log, mode_counts, mode)
 
     return linked
 

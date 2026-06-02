@@ -305,6 +305,20 @@ class BaldursGate3(BaseGame):
         staging  = self.get_effective_mod_staging_path()
         modlist  = self.get_profile_root() / "profiles" / profile / "modlist.txt"
 
+        # Tell the user exactly where mods are being deployed. The Larian data
+        # folder lives either inside the Proton prefix or in the native Linux
+        # build's ~/.local/share — diagnosing "mods not loading" almost always
+        # starts with confirming which one we targeted.
+        if self._prefix_path is not None:
+            _log(f"Deploy target: Proton prefix ({self._prefix_path})")
+        else:
+            _log("Deploy target: native Linux build")
+        _log(f"  Larian data root: {larian_root}")
+        _log(f"  Mods folder:      {mods_dir}")
+        _log(f"  Game path:        {self._game_path or '(not set)'}")
+        _log(f"  Staging:          {staging}")
+        _log(f"  Deploy mode:      {mode.name}")
+
         mods_dir.mkdir(parents=True, exist_ok=True)
 
         if not filemap.is_file():
@@ -353,8 +367,11 @@ class BaldursGate3(BaseGame):
         linked_core = deploy_core(mods_dir, placed, mode=mode, log_fn=_log)
         _log(f"  Transferred {linked_core} vanilla file(s).")
 
-        _log("Step 4: Generating modsettings.lsx ...")
         modsettings = larian_root / _MODSETTINGS_REL
+        _log(f"Step 4: Generating modsettings.lsx → {modsettings}")
+        if not modsettings.parent.is_dir():
+            _log(f"  Note: profile folder {modsettings.parent} does not exist "
+                 "yet — creating it (game may not have generated a profile).")
         game_data = self._game_path / "Data" if self._game_path else None
         # If this profile was created from a collection, the manifest's
         # loadOrder array drives the pak ordering. Curators interleave paks
@@ -380,8 +397,8 @@ class BaldursGate3(BaseGame):
         _log(
             f"Deploy complete. "
             f"{linked_mod} mod + {linked_core} vanilla "
-            f"= {linked_mod + linked_core} total file(s) in Mods/. "
-            f"modsettings.lsx written with {mod_count} mod(s)."
+            f"= {linked_mod + linked_core} total file(s) in {mods_dir}. "
+            f"modsettings.lsx ({mod_count} mod(s)) at {modsettings}."
         )
 
     def restore(self, log_fn=None, progress_fn=None) -> None:

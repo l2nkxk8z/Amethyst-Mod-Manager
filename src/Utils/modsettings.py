@@ -276,12 +276,17 @@ def parse_meta_lsx(xml_text: str) -> BG3ModInfo | None:
 def scan_mod_paks(
     staging_root: Path,
     enabled_mods: list[ModEntry],
+    no_metadata: list[str] | None = None,
 ) -> dict[str, BG3ModInfo]:
     """Scan .pak files for all enabled mods and return {uuid: BG3ModInfo}.
 
     Each mod's staging folder may contain one or more .pak files.  We extract
     meta.lsx from each and collect the metadata.  If a mod folder contains
     multiple .pak files, each one that has a meta.lsx is recorded.
+
+    *no_metadata* — optional list; enabled mods that contain at least one .pak
+    but yielded no usable meta.lsx are appended (with the reason) for the
+    caller to surface as a diagnostic.
     """
     by_uuid: dict[str, BG3ModInfo] = {}
 
@@ -289,7 +294,9 @@ def scan_mod_paks(
         mod_dir = staging_root / entry.name
         if not mod_dir.is_dir():
             continue
-        for pak in mod_dir.rglob("*.pak"):
+        paks = list(mod_dir.rglob("*.pak"))
+        got_meta = False
+        for pak in paks:
             try:
                 xml_text = extract_meta_lsx(pak)
             except Exception as exc:
@@ -302,6 +309,11 @@ def scan_mod_paks(
                 continue
             info.source_mod = entry.name
             by_uuid[info.uuid] = info
+            got_meta = True
+
+        if paks and not got_meta and no_metadata is not None:
+            reason = "no meta.lsx in any .pak (likely a loose-file / data mod)"
+            no_metadata.append(f"{entry.name} ({len(paks)} pak(s): {reason})")
 
     return by_uuid
 
@@ -629,8 +641,14 @@ def write_modsettings(
     enabled = list(reversed(enabled))
 
     _log(f"Scanning .pak files for mod metadata (patch {patch_version}) ...")
-    mod_infos = scan_mod_paks(staging_root, enabled)
+    no_metadata: list[str] = []
+    mod_infos = scan_mod_paks(staging_root, enabled, no_metadata=no_metadata)
     _log(f"  Found metadata for {len(mod_infos)} mod(s).")
+    if no_metadata:
+        _log(f"  {len(no_metadata)} enabled mod(s) had .pak files but no "
+             "modsettings metadata (won't appear in load order):")
+        for desc in no_metadata:
+            _log(f"    - {desc}")
 
     if not mod_infos:
         _log("No mod metadata found — writing vanilla modsettings.lsx.")
