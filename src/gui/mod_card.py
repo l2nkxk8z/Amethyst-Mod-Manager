@@ -232,6 +232,7 @@ class ModCard:
         )
         view_btn.grid(row=0, column=0, padx=(0, 4), sticky="ew")
 
+        self._is_installed = is_installed
         install_btn = ctk.CTkButton(
             btn_frame, text="Reinstall" if is_installed else "Install",
             height=30,
@@ -240,9 +241,24 @@ class ModCard:
             font=font_sized(FONT_FAMILY, 12), command=on_install,
         )
         install_btn.grid(row=0, column=1, padx=(4, 0), sticky="ew")
+        self._install_btn = install_btn
 
         for widget in (self.card, self._img_label, title_label, btn_frame):
             widget.bind("<ButtonRelease-3>", on_right_click)
+
+    def set_installed(self, is_installed: bool):
+        """Toggle the install button between Install and Reinstall styling."""
+        if is_installed == self._is_installed:
+            return
+        self._is_installed = is_installed
+        try:
+            self._install_btn.configure(
+                text="Reinstall" if is_installed else "Install",
+                fg_color="#c37800" if is_installed else "#2d7a2d",
+                hover_color="#e28b00" if is_installed else "#3a9e3a",
+            )
+        except Exception:
+            pass
 
     def load_image_async(self, url: str, cache: dict, loading: set, parent, on_done: Callable | None = None):
         """Start async image load; update label when done. Calls on_done() (on main thread) when finished."""

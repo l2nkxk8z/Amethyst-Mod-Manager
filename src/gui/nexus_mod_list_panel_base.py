@@ -257,6 +257,12 @@ class _NexusModListPanel:
         self._bind_scroll(card.card)
         return card
 
+    def mark_installed(self, mod_id: int):
+        """Flip any card showing this mod_id to its 'Reinstall' state."""
+        for mc in self._cards:
+            if getattr(mc._entry, "mod_id", None) == mod_id:
+                mc.set_installed(True)
+
     def _build_cards(self):
         """Replace all cards with the current entries."""
         self._clear_cards()

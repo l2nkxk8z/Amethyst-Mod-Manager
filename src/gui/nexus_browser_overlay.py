@@ -247,7 +247,8 @@ class _FileChooserOverlay(tk.Frame):
 
 
 def install_nexus_mod_from_entry(app, api, game, mod_panel, log_fn, entry,
-                                 label: str = "Missing Requirements"):
+                                 label: str = "Missing Requirements",
+                                 on_complete: Optional[Callable] = None):
     """Download and install a mod from Nexus by entry (mod_id, domain_name, name).
     Used by missing-requirements panel and Nexus browser overlay.
     """
@@ -404,6 +405,8 @@ def install_nexus_mod_from_entry(app, api, game, mod_panel, log_fn, entry,
                         app.after(0, lambda d=done, t=total, p=phase: status_bar.set_progress(d, t, p, title="Extracting"))
 
                 def _cleanup(is_fomod: bool = False):
+                    if on_complete is not None:
+                        app.after(0, on_complete)
                     from Utils.ui_config import (
                         load_clear_archive_after_install,
                         load_keep_fomod_archives,
@@ -681,4 +684,20 @@ class NexusBrowserOverlay(tk.Frame):
         e = SimpleNamespace(domain_name=domain, mod_id=mod_id, name=mod_name)
         app = self._app_root
         mod_panel = getattr(app, "_mod_panel", None)
-        install_nexus_mod_from_entry(app, self._api, self._game, mod_panel, self._log, e, label)
+
+        # Flip every panel's matching card to "Reinstall" once the install lands,
+        # so the button updates without needing a manual refresh.
+        def _on_complete():
+            for panel in (
+                self._browse_panel, self._tracked_panel,
+                self._endorsed_panel, self._trending_panel,
+            ):
+                try:
+                    panel.mark_installed(mod_id)
+                except Exception:
+                    pass
+
+        install_nexus_mod_from_entry(
+            app, self._api, self._game, mod_panel, self._log, e, label,
+            on_complete=_on_complete,
+        )
