@@ -443,6 +443,11 @@ class DragonAgeOrigins(BaseGame):
         # hold the vanilla override/AddIns/Offers state captured at deploy).
         restored = 0
         overwrite_dir = self.get_effective_overwrite_path()
+        # modindex.bin lives in the profile root (next to filemap.txt), NOT
+        # under overwrite/. We restore per-subfolder, so overwrite_dir is a
+        # sub-path of overwrite/ — pass index_path explicitly so the rescued-
+        # files index update doesn't land in overwrite/<sub>/modindex.bin.
+        index_path = self.get_effective_filemap_path().parent / "modindex.bin"
         for sub in _MANAGED_SUBDIRS:
             sub_path = data_root / sub
             core_path = data_root / self._core_dir_for(sub)
@@ -452,6 +457,7 @@ class DragonAgeOrigins(BaseGame):
                 sub_path,
                 core_dir=core_path,
                 overwrite_dir=overwrite_dir / sub if overwrite_dir else None,
+                index_path=index_path,
                 log_fn=_log,
             )
             _log(f"  {sub}: restored {n} vanilla file(s).")

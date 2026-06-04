@@ -604,7 +604,8 @@ class StatusBar(ctk.CTkFrame):
         self._log_buffer.append((f"[{timestamp}]  {message}\n", tag))
         # Append to log file immediately (cheap I/O, keeps file in sync)
         try:
-            with open(self._log_file, "a", encoding="utf-8") as f:
+            with open(self._log_file, "a", encoding="utf-8",
+                      errors="replace") as f:
                 full_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 f.write(f"[{full_ts}]  {message}\n")
         except OSError:

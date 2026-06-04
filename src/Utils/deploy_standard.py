@@ -681,6 +681,7 @@ def restore_data_core(
     overwrite_dir: Path | None = None,
     staging_root: Path | None = None,
     strip_prefixes: set[str] | None = None,
+    index_path: Path | None = None,
     log_fn=None,
 ) -> int:
     """Undo a deploy: clear deploy_dir and move core_dir contents back.
@@ -925,15 +926,20 @@ def restore_data_core(
             if rescued_overwrite_rels:
                 try:
                     from Utils.filemap import update_mod_index, read_mod_index
-                    index_path = overwrite_dir.parent / "modindex.bin"
-                    existing = read_mod_index(index_path) or {}
+                    # Default assumes overwrite_dir is the profile's top-level
+                    # overwrite/ (so its parent is the profile root holding
+                    # modindex.bin). Callers that pass a SUB-path of overwrite/
+                    # (e.g. DAO's per-subfolder restore) must pass index_path
+                    # explicitly, or the index lands in the wrong place.
+                    _index_path = index_path or (overwrite_dir.parent / "modindex.bin")
+                    existing = read_mod_index(_index_path) or {}
                     existing_normal, existing_root = existing.get(_OVERWRITE_NAME, ({}, {}))
                     new_normal: dict[str, str] = dict(existing_normal)
                     for _rel_str in rescued_overwrite_rels:
                         # Normalise separators for cross-platform safety
                         _rel_posix = _rel_str.replace("\\", "/")
                         new_normal[_rel_posix.lower()] = _rel_posix
-                    update_mod_index(index_path, _OVERWRITE_NAME, new_normal, existing_root)
+                    update_mod_index(_index_path, _OVERWRITE_NAME, new_normal, existing_root)
                 except Exception:
                     pass
         print(f"  [TIMER] restore — rescue walk: {_time.perf_counter() - _t_rescue_start:.3f}s")

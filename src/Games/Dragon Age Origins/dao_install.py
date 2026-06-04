@@ -363,6 +363,19 @@ def normalize_dao_mod(dest_root: Path, mod_name: str, log_fn=None) -> None:
     # content flows through the override/AddIns normalization below.
     extracted = _extract_archives(dest_root, _log)
 
+    # Step 0.1: handle the pre-extracted .dazip case — when install_mod unpacks
+    # the .dazip itself (because it treats .dazip as a zip), the staged tree
+    # contains a Contents/ folder and a Manifest.xml at the root. This is the
+    # same structure _extract_archives processes, but no archive file remains.
+    # Detect it by the presence of a root-level Contents/ dir and merge it now.
+    contents_dir = dest_root / "Contents"
+    if contents_dir.is_dir():
+        _merge_tree(contents_dir, dest_root)
+        _log(f"  [DAO] merged pre-extracted Contents/ tree.")
+    # File a root-level Manifest.xml if present — covers the pre-extracted
+    # .dazip case and any mod that ships Manifest.xml at the staging root.
+    _file_manifest(dest_root, dest_root, _log)
+
     # Step 0.5: handle an OverrideConfig.xml (DAO-Modmanager option wizard).
     # Runs whether the .override was unpacked by us above or by the generic
     # installer before normalize was invoked. Applies the user's variant choice
