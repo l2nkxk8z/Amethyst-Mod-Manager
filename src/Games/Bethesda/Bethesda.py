@@ -244,7 +244,11 @@ class Fallout_3(BaseGame):
 
     @property
     def conflict_ignore_filenames(self) -> set[str]:
-        return {"info.xml","readme.txt","*.jpg"}
+        return {"info.xml","*read*.txt","*.jpg"}
+    
+    @property
+    def excluded_loose_filenames(self) -> set[str]:
+        return {"*.txt"}
 
     @property
     def archive_extensions(self) -> frozenset[str]:
