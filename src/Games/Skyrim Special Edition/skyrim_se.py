@@ -394,8 +394,8 @@ class SkyrimSE(Fallout_3):
             )
 
         _log("Step 1: Moving Data/ → Data_Core/ ...")
-        moved = move_to_core(data_dir, log_fn=_log)
-        _log(f"  Moved {moved} file(s) to Data_Core/.")
+        move_to_core(data_dir, log_fn=_log)
+        _log("  Backed up existing files → Data_Core/.")
 
         profile_dir = self.get_profile_root() / "profiles" / profile
         per_mod_strip = load_per_mod_strip_prefixes(profile_dir)
