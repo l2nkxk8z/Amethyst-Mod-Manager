@@ -209,23 +209,65 @@ class _BodySlideBaseWizard(ctk.CTkFrame):
                 return cand
         return None
 
+    # Maps a game's synthesis_registry_name to its BodySlide GameDataPaths child
+    # tag and TargetGame index (see the comment at the top of Config.xml).
+    _BODYSLIDE_GAMES = {
+        "Fallout3":                ("Fallout3", 0),
+        "FalloutNewVegas":         ("FalloutNewVegas", 1),
+        "Skyrim":                  ("Skyrim", 2),
+        "Fallout4":                ("Fallout4", 3),
+        "Skyrim Special Edition":  ("SkyrimSpecialEdition", 4),
+        "Fallout 4 VR":            ("Fallout4VR", 5),
+        "Skyrim VR":               ("SkyrimVR", 6),
+    }
+
+    def _bodyslide_game(self) -> "tuple[str, int] | None":
+        return self._BODYSLIDE_GAMES.get(
+            getattr(self._game, "synthesis_registry_name", None)
+        )
+
+    def _set_gamedatapaths_child(self, text: str, tag: str, value: str) -> str:
+        """Set <tag> inside the <GameDataPaths> block (creating it if absent)."""
+        block = re.search(r"<GameDataPaths>(.*?)</GameDataPaths>", text, flags=re.DOTALL)
+        if not block:
+            return text
+        inner = block.group(1)
+        new_child = f"<{tag}>{value}</{tag}>"
+        child_pat = rf"<{tag}>.*?</{tag}>"
+        if re.search(child_pat, inner, flags=re.DOTALL):
+            new_inner = re.sub(child_pat, lambda _m: new_child, inner, count=1, flags=re.DOTALL)
+        else:
+            new_inner = inner + f"        {new_child}\n    "
+        return text[: block.start(1)] + new_inner + text[block.end(1) :]
+
+    def _set_config_tag(self, text: str, tag: str, value: str) -> str:
+        new_tag = f"<{tag}>{value}</{tag}>"
+        pattern = rf"<{tag}>.*?</{tag}>"
+        if re.search(pattern, text, flags=re.DOTALL):
+            return re.sub(pattern, lambda _m: new_tag, text, count=1, flags=re.DOTALL)
+        return text.replace("</Config>", f"    {new_tag}\n</Config>", 1)
+
     def _update_output_path_in_config(self, config_path: Path, output_dir: Path) -> bool:
         try:
             text = config_path.read_text(encoding="utf-8")
         except OSError:
             return False
-        wine = self._to_wine_path(output_dir)
-        new_tag = f"<OutputDataPath>{wine}</OutputDataPath>"
-        if re.search(r"<OutputDataPath>.*?</OutputDataPath>", text, flags=re.DOTALL):
-            updated = re.sub(
-                r"<OutputDataPath>.*?</OutputDataPath>",
-                lambda _m: new_tag,
-                text,
-                count=1,
-                flags=re.DOTALL,
-            )
-        else:
-            updated = text.replace("</Config>", f"    {new_tag}\n</Config>", 1)
+
+        updated = self._set_config_tag(
+            text, "OutputDataPath", self._to_wine_path(output_dir)
+        )
+
+        data_path = self._game.get_mod_data_path()
+        if data_path is not None:
+            wine_data = self._to_wine_path(data_path)
+            updated = self._set_config_tag(updated, "GameDataPath", wine_data)
+
+            mapping = self._bodyslide_game()
+            if mapping is not None:
+                tag, target = mapping
+                updated = self._set_gamedatapaths_child(updated, tag, wine_data)
+                updated = self._set_config_tag(updated, "TargetGame", str(target))
+
         if updated == text:
             return True
         try:
