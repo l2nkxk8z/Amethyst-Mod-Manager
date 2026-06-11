@@ -7,6 +7,9 @@ Owns the per-mod file tree:
 - Strip-prefix promotion / demotion via the Top Level column.
 - Per-row exclusion via the Disable column (writes ``excluded_mod_files``).
 - Right-click → Open in File Browser.
+- Click on an image file (incl. .dds) → preview overlay over the modlist panel.
+- Click on a text-type file → shared ini/text editor overlay (same as INI Files tab).
+- Filters button → file-type filter side panel (same pattern as the Data/Ini tabs).
 
 Host (PluginPanel) owns: ``self._game``, ``self._tabs``, ``self._log``,
 ``self._safe_after``, the mod-files state attributes initialised in
@@ -41,6 +44,7 @@ from gui.theme import (
     RED_HOV,
     TEXT_DIM,
     TEXT_MAIN,
+    TEXT_ON_ACCENT,
     SCROLL_BG,
     SCROLL_TROUGH,
     SCROLL_ACTIVE,
@@ -66,6 +70,13 @@ class PluginPanelModFilesMixin:
     _MF_TL_SEL   = "☑"   # path marked as top-level (stripped on deploy)
     _MF_TL_UNSEL = "☐"   # path not marked
 
+    # Text-type files that open in the shared ini/text editor overlay on
+    # click — the INI Files tab set plus common modding text formats.
+    _MF_TEXT_EXTS = frozenset({
+        ".ini", ".json", ".toml", ".txt", ".cfg", ".conf", ".config",
+        ".yaml", ".yml", ".xml", ".log", ".md", ".lua", ".psc", ".csv",
+    })
+
     def _build_mod_files_tab(self):
         tab = self._tabs.tab("Mod Files")
         tab.configure(fg_color=BG_LIST)
@@ -87,6 +98,14 @@ class PluginPanelModFilesMixin:
             command=self._toggle_mf_tree_expand,
         )
         self._mf_expand_btn.pack(side="right", padx=(0, 8), pady=2)
+
+        self._mf_filter_btn = ctk.CTkButton(
+            toolbar, text="Filters", width=72, height=26,
+            fg_color=ACCENT, hover_color=ACCENT_HOV, text_color=TEXT_ON_ACCENT,
+            font=_theme.FONT_HEADER, corner_radius=4,
+            command=self._toggle_mf_filter_panel,
+        )
+        self._mf_filter_btn.pack(side="right", padx=(0, 8), pady=2)
 
         self._mf_only_conflicts_var = tk.BooleanVar(value=False)
         ctk.CTkCheckBox(
@@ -235,6 +254,16 @@ class PluginPanelModFilesMixin:
 
         # Track the open overlay so we can close it from anywhere.
         self._bsa_unpack_overlay = None
+        # Image preview overlay (placed over the modlist panel).
+        self._mf_image_preview = None
+
+        # File-type filter state (side panel shares column 0 on the mod list).
+        self._mf_filter_extensions: set[str] = set()           # include-only
+        self._mf_filter_extensions_exclude: set[str] = set()   # hide these
+        self._mf_filter_panel_open: bool = False
+        self._mf_last_ext_counts: dict[str, int] = {}
+        self._mfsp_listed_counts: dict[str, int] | None = None
+        self._build_mf_filter_side_panel()
 
     def _mf_check_symbol(self, iid: str) -> str:
         if iid in self._mf_folder_iids:
@@ -273,12 +302,16 @@ class PluginPanelModFilesMixin:
             parent = self._mf_tree.parent(parent)
 
     def _on_mf_click(self, event):
-        if getattr(self, "_mf_separator_view", False):
-            return
         iid = self._mf_tree.identify_row(event.y)
         if not iid:
             return
         col = self._mf_tree.identify_column(event.x)
+        if col == "#0":
+            if not self._mf_maybe_preview_image(iid):
+                self._mf_maybe_open_text_editor(iid)
+            return
+        if getattr(self, "_mf_separator_view", False):
+            return
         if col == "#1":
             self._mf_toggle_top_level(iid)
             return
@@ -292,6 +325,335 @@ class PluginPanelModFilesMixin:
         sel = self._mf_tree.selection()
         if sel:
             self._mf_toggle(sel[0])
+
+    # ------------------------------------------------------------------
+    # Image preview (Mod Files tab)
+    # ------------------------------------------------------------------
+
+    def _mf_mod_name_for_iid(self, iid: str) -> str | None:
+        """Return the mod a row belongs to — in the separator view the
+        topmost ancestor row carries the mod name."""
+        if getattr(self, "_mf_separator_view", False):
+            cur = iid
+            parent = self._mf_tree.parent(cur)
+            while parent:
+                cur = parent
+                parent = self._mf_tree.parent(cur)
+            return self._mf_tree.item(cur, "text") or None
+        return self._mod_files_mod_name
+
+    def _mf_disk_path_for_iid(self, iid: str) -> Path | None:
+        """Resolve a leaf row to its on-disk path. Works in both the
+        single-mod and separator views; handles the Overwrite pseudo-mod."""
+        rel_str = self._mf_iid_to_relstr.get(iid)
+        if not rel_str:
+            return None
+        mod_name = self._mf_mod_name_for_iid(iid)
+        if not mod_name:
+            return None
+        base: Path | None = None
+        if mod_name == _OVERWRITE_NAME:
+            if self._game is not None and hasattr(self._game, "get_effective_overwrite_path"):
+                try:
+                    base = Path(self._game.get_effective_overwrite_path())
+                except Exception:
+                    base = None
+        else:
+            staging = self._get_staging_path()
+            if staging is not None:
+                base = Path(staging) / mod_name
+        if base is None:
+            return None
+        return base / rel_str.replace("\\", "/")
+
+    def _mf_maybe_preview_image(self, iid: str) -> bool:
+        """Open/update the image preview if the row is a previewable file."""
+        from gui.image_preview_overlay import PREVIEW_EXTS
+        rel_str = self._mf_iid_to_relstr.get(iid)
+        if not rel_str or Path(rel_str).suffix.lower() not in PREVIEW_EXTS:
+            return False
+        target = self._mf_disk_path_for_iid(iid)
+        if target is None or not target.is_file():
+            return False
+        self._open_image_preview(target)
+        return True
+
+    def _mf_maybe_open_text_editor(self, iid: str) -> bool:
+        """Open the shared ini/text editor overlay if the row is a text file."""
+        rel_str = self._mf_iid_to_relstr.get(iid)
+        if not rel_str or Path(rel_str).suffix.lower() not in self._MF_TEXT_EXTS:
+            return False
+        target = self._mf_disk_path_for_iid(iid)
+        if target is None or not target.is_file():
+            return False
+        mod_name = self._mf_mod_name_for_iid(iid) or ""
+        show_fn = getattr(self.winfo_toplevel(), "show_ini_editor_panel", None)
+        if show_fn is None:
+            return False
+        self._close_image_preview()
+        show_fn(str(target), rel_str.replace("\\", "/"), mod_name)
+        return True
+
+    def _open_image_preview(self, path: Path):
+        from gui.image_preview_overlay import ImagePreviewOverlay
+        # Both overlays cover the modlist panel — drop an open editor first.
+        hide_editor = getattr(self.winfo_toplevel(), "hide_ini_editor_panel", None)
+        if hide_editor is not None:
+            try:
+                hide_editor()
+            except Exception:
+                pass
+        overlay = self._mf_image_preview
+        if overlay is None or not overlay.winfo_exists():
+            # Prefer covering the modlist panel so the file tree stays
+            # usable for browsing between images; fall back to covering
+            # the plugin panel when the host container isn't available.
+            host = getattr(self.winfo_toplevel(), "_mod_panel_container", None)
+            parent = host if (host is not None and host.winfo_exists()) else self
+            overlay = ImagePreviewOverlay(parent, on_close=self._close_image_preview)
+            overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+            self._mf_image_preview = overlay
+        overlay.show(path)
+
+    def _close_image_preview(self):
+        overlay = getattr(self, "_mf_image_preview", None)
+        self._mf_image_preview = None
+        if overlay is not None:
+            try:
+                overlay.destroy()
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------
+    # File-type filter side panel (Mod Files tab)
+    # ------------------------------------------------------------------
+
+    def _build_mf_filter_side_panel(self) -> None:
+        """Build the Mod Files filter side panel — same pattern as the
+        Data / Ini filter panels, sharing column 0 on the ModListPanel."""
+        mod_panel = getattr(self.winfo_toplevel(), "_mod_panel", None)
+        parent = mod_panel if mod_panel is not None else self
+        panel = ctk.CTkFrame(parent, fg_color=BG_PANEL, corner_radius=0, width=380)
+        panel.grid(row=0, column=0, rowspan=5, sticky="nsew")
+        panel.grid_propagate(False)
+        panel.grid_remove()
+        self._mf_filter_side_panel = panel
+
+        header = tk.Frame(panel, bg=BG_HEADER, height=scaled(36))
+        header.pack(fill="x", side="top")
+        header.pack_propagate(False)
+
+        tk.Label(
+            header, text="Mod Files Filters", bg=BG_HEADER, fg=TEXT_MAIN,
+            font=_theme.TK_FONT_BOLD, anchor="w",
+        ).pack(side="left", padx=10, pady=6)
+
+        close_btn = tk.Label(
+            header, text="×", bg=BG_HEADER, fg=TEXT_DIM,
+            font=(_theme.FONT_FAMILY, 16, "bold"), cursor="hand2",
+        )
+        close_btn.pack(side="right", padx=8)
+        close_btn.bind("<Button-1>", lambda _e: self._close_mf_filter_panel())
+        close_btn.bind("<Enter>",    lambda _e: close_btn.configure(fg=TEXT_MAIN))
+        close_btn.bind("<Leave>",    lambda _e: close_btn.configure(fg=TEXT_DIM))
+
+        clear_btn = tk.Label(
+            header, text="Clear all", bg=BG_HEADER, fg=TEXT_DIM,
+            font=_theme.TK_FONT_SMALL, cursor="hand2",
+        )
+        clear_btn.pack(side="right", padx=(0, 4))
+        clear_btn.bind("<Button-1>", lambda _e: self._clear_all_mf_filters())
+        clear_btn.bind("<Enter>",    lambda _e: clear_btn.configure(fg=TEXT_MAIN))
+        clear_btn.bind("<Leave>",    lambda _e: clear_btn.configure(fg=TEXT_DIM))
+
+        tk.Frame(panel, bg=BORDER, height=1).pack(fill="x")
+
+        scroll_frame = ctk.CTkScrollableFrame(
+            panel, fg_color="transparent", corner_radius=0,
+        )
+        scroll_frame.pack(fill="both", expand=True, padx=8, pady=6)
+        self._mf_filter_scroll_frame = scroll_frame
+
+        tk.Label(
+            scroll_frame, text="By file type",
+            font=_theme.TK_FONT_BOLD, fg=TEXT_MAIN, bg=BG_PANEL, anchor="w",
+        ).pack(anchor="w", pady=(2, 4))
+
+        self._mfsp_filetype_frame = ctk.CTkFrame(scroll_frame, fg_color="transparent")
+        self._mfsp_filetype_frame.pack(anchor="w", fill="x", pady=(2, 0))
+        self._mfsp_filetype_vars: dict[str, tk.IntVar] = {}
+
+        self._bind_mf_filter_panel_scroll()
+
+    def _bind_mf_filter_panel_scroll(self) -> None:
+        scroll_frame = getattr(self, "_mf_filter_scroll_frame", None)
+        if not scroll_frame or not hasattr(scroll_frame, "_parent_canvas"):
+            return
+        step = 2
+
+        def _on_wheel(evt):
+            num = getattr(evt, "num", None)
+            delta = getattr(evt, "delta", 0) or 0
+            if num == 4 or delta > 0:
+                scroll_frame._parent_canvas.yview_scroll(-step, "units")
+            elif num == 5 or delta < 0:
+                scroll_frame._parent_canvas.yview_scroll(step, "units")
+            return "break"
+
+        _legacy = None if LEGACY_WHEEL_REDUNDANT else _on_wheel
+
+        def _bind_recursive(w):
+            if _legacy is not None:
+                w.bind("<Button-4>", _legacy)
+                w.bind("<Button-5>", _legacy)
+            for child in w.winfo_children():
+                _bind_recursive(child)
+
+        _bind_recursive(scroll_frame)
+
+    def _refresh_mf_filter_filetype_list(self) -> None:
+        frame = getattr(self, "_mfsp_filetype_frame", None)
+        if frame is None:
+            return
+        for w in frame.winfo_children():
+            w.destroy()
+        self._mfsp_filetype_vars.clear()
+        counts = self._mf_last_ext_counts
+        self._mfsp_listed_counts = dict(counts)
+        if not counts:
+            ctk.CTkLabel(
+                frame, text="(no files in Mod Files tab)",
+                font=_theme.FONT_SMALL, text_color=TEXT_DIM, anchor="w",
+            ).pack(anchor="w", pady=2)
+            self._bind_mf_filter_panel_scroll()
+            return
+        from gui.tri_state_checkbox import TriStateCheckBox
+        for ext, count in sorted(counts.items(), key=lambda kv: kv[0]):
+            if ext in self._mf_filter_extensions:
+                init = 1
+            elif ext in self._mf_filter_extensions_exclude:
+                init = 2
+            else:
+                init = 0
+            var = tk.IntVar(value=init)
+            self._mfsp_filetype_vars[ext] = var
+            TriStateCheckBox(
+                frame,
+                text=f"{ext or '(no extension)'}  ({count:,})",
+                variable=var,
+                font=_theme.FONT_SMALL,
+                text_color=TEXT_MAIN,
+                fg_color=ACCENT,
+                hover_color=ACCENT_HOV,
+                border_color=BORDER,
+                checkmark_color="white",
+                command=self._on_mf_filter_panel_change,
+            ).pack(anchor="w", pady=2)
+        self._bind_mf_filter_panel_scroll()
+
+    def _on_mf_filter_panel_change(self) -> None:
+        self._mf_filter_extensions = {
+            ext for ext, v in self._mfsp_filetype_vars.items() if v.get() == 1
+        }
+        self._mf_filter_extensions_exclude = {
+            ext for ext, v in self._mfsp_filetype_vars.items() if v.get() == 2
+        }
+        self._update_mf_filter_btn_color()
+        self._mf_refresh_current_view()
+
+    def _clear_all_mf_filters(self) -> None:
+        self._mf_filter_extensions = set()
+        self._mf_filter_extensions_exclude = set()
+        for v in self._mfsp_filetype_vars.values():
+            v.set(0)
+        self._refresh_mf_filter_filetype_list()
+        self._update_mf_filter_btn_color()
+        self._mf_refresh_current_view()
+
+    def _toggle_mf_filter_panel(self) -> None:
+        if getattr(self, "_mf_filter_panel_open", False):
+            self._close_mf_filter_panel()
+        else:
+            self._open_mf_filter_panel()
+
+    def _open_mf_filter_panel(self) -> None:
+        mod_panel = getattr(self.winfo_toplevel(), "_mod_panel", None)
+        if mod_panel is None or self._mf_filter_side_panel is None:
+            return
+        # Mutual exclusion with the other filter panels that share column 0.
+        if getattr(mod_panel, "_filter_panel_open", False):
+            try:
+                mod_panel._close_filter_side_panel()
+            except Exception:
+                pass
+        if getattr(self, "_plugin_filter_panel_open", False):
+            try:
+                self._close_plugin_filter_panel()
+            except Exception:
+                pass
+        if getattr(self, "_data_filter_panel_open", False):
+            try:
+                self._close_data_filter_panel()
+            except Exception:
+                pass
+        if getattr(self, "_ini_filter_panel_open", False):
+            try:
+                self._close_ini_filter_panel()
+            except Exception:
+                pass
+        app = self.winfo_toplevel()
+        dl_panel = getattr(app, "_downloads_panel", None)
+        if dl_panel is not None and getattr(dl_panel, "_filter_panel_open", False):
+            try:
+                dl_panel._close_filter_side_panel()
+            except Exception:
+                pass
+        self._mf_filter_panel_open = True
+        mod_panel.grid_columnconfigure(0, minsize=scaled(380))
+        self._mf_filter_side_panel.grid()
+        self._refresh_mf_filter_filetype_list()
+        self._update_mf_filter_btn_color()
+
+    def _close_mf_filter_panel(self) -> None:
+        mod_panel = getattr(self.winfo_toplevel(), "_mod_panel", None)
+        self._mf_filter_panel_open = False
+        if mod_panel is not None:
+            mod_panel.grid_columnconfigure(0, minsize=0)
+        if self._mf_filter_side_panel is not None:
+            self._mf_filter_side_panel.grid_remove()
+        self._update_mf_filter_btn_color()
+
+    def _update_mf_filter_btn_color(self) -> None:
+        btn = getattr(self, "_mf_filter_btn", None)
+        if btn is None:
+            return
+        if self._mf_filter_extensions or self._mf_filter_extensions_exclude:
+            btn.configure(fg_color=ACCENT_HOV, hover_color=ACCENT_HOV)
+        else:
+            btn.configure(fg_color=ACCENT, hover_color=ACCENT_HOV)
+
+    def _mf_filter_list_sync(self) -> None:
+        """Refresh the side-panel file-type list when the counts changed.
+        Skipping the no-op rebuild also avoids destroying a checkbox while
+        its own command callback is still running."""
+        if not self._mf_filter_panel_open:
+            return
+        if self._mf_last_ext_counts == self._mfsp_listed_counts:
+            return
+        self._refresh_mf_filter_filetype_list()
+
+    def _mf_ext_filter_ok(self, rel_key: str) -> bool:
+        """True if the file passes the current file-type filter."""
+        inc = self._mf_filter_extensions
+        exc = self._mf_filter_extensions_exclude
+        if not inc and not exc:
+            return True
+        ext = Path(rel_key).suffix.lower()
+        if ext in exc:
+            return False
+        if inc:
+            return ext in inc
+        return True
 
     def _mf_apply_disabled_tag(self, iid: str, disabled: bool):
         """Add/remove the greyed ``mf_disabled`` tag based on disable state,
@@ -668,6 +1030,8 @@ class PluginPanelModFilesMixin:
 
         if mod_name is None:
             self._mod_files_label.configure(text="(no mod selected)")
+            self._mf_last_ext_counts = {}
+            self._mf_filter_list_sync()
             return
 
         self._mod_files_label.configure(text=mod_name)
@@ -717,6 +1081,14 @@ class PluginPanelModFilesMixin:
             files.update(_normal)
             files.update(_root)
 
+        # Extension counts for the filter side panel (pre-filter).
+        ext_counts: dict[str, int] = {}
+        for rel_key in files:
+            ext = Path(rel_key).suffix.lower()
+            ext_counts[ext] = ext_counts.get(ext, 0) + 1
+        self._mf_last_ext_counts = ext_counts
+        self._mf_filter_list_sync()
+
         if not files:
             self._mf_tree.insert("", "end", text="  (no files found — try refreshing)", tags=("dim",))
             self._mf_tree.tag_configure("dim", foreground=TEXT_DIM)
@@ -758,9 +1130,15 @@ class PluginPanelModFilesMixin:
             self._mf_only_conflicts_var and self._mf_only_conflicts_var.get()
         )
 
+        ext_filter_active = bool(
+            self._mf_filter_extensions or self._mf_filter_extensions_exclude
+        )
+
         # Build tree structure
         tree_dict: dict = {}
         for rel_key, rel_str in sorted(files.items()):
+            if not self._mf_ext_filter_ok(rel_key):
+                continue
             if only_conflicts and _conflict_tag(rel_key) is None:
                 continue
             parts = rel_str.replace("\\", "/").split("/")
@@ -769,8 +1147,12 @@ class PluginPanelModFilesMixin:
                 node = node.setdefault(part, {})
             node.setdefault("__files__", []).append((parts[-1], rel_key, rel_str))
 
-        if only_conflicts and not tree_dict:
-            self._mf_tree.insert("", "end", text="  (no conflicts)", tags=("dim",))
+        if (only_conflicts or ext_filter_active) and not tree_dict:
+            placeholder = (
+                "  (no files match the filters)" if ext_filter_active
+                else "  (no conflicts)"
+            )
+            self._mf_tree.insert("", "end", text=placeholder, tags=("dim",))
             return
 
         # Configure the "stripped" tag used to grey out unchecked top-level rows.
@@ -915,6 +1297,8 @@ class PluginPanelModFilesMixin:
             self._mod_files_label.configure(
                 text=f"{separator_name} — (no mods in this separator)"
             )
+            self._mf_last_ext_counts = {}
+            self._mf_filter_list_sync()
             return
 
         self._mod_files_label.configure(
@@ -951,6 +1335,10 @@ class PluginPanelModFilesMixin:
         only_conflicts = bool(
             self._mf_only_conflicts_var and self._mf_only_conflicts_var.get()
         )
+        ext_filter_active = bool(
+            self._mf_filter_extensions or self._mf_filter_extensions_exclude
+        )
+        agg_ext_counts: dict[str, int] = {}
 
         from Utils.filemap import _scan_dir
         staging_dir: Path | None = None
@@ -1005,8 +1393,14 @@ class PluginPanelModFilesMixin:
                     return None
                 return "conflict_win" if winner == _owner else "conflict_lose"
 
+            for rel_key in files:
+                ext = Path(rel_key).suffix.lower()
+                agg_ext_counts[ext] = agg_ext_counts.get(ext, 0) + 1
+
             tree_dict: dict = {}
             for rel_key, rel_str in sorted(files.items()):
+                if not self._mf_ext_filter_ok(rel_key):
+                    continue
                 if only_conflicts and _conflict_tag(rel_key) is None:
                     continue
                 parts = rel_str.replace("\\", "/").split("/")
@@ -1015,7 +1409,7 @@ class PluginPanelModFilesMixin:
                     node = node.setdefault(part, {})
                 node.setdefault("__files__", []).append((parts[-1], rel_key, rel_str))
 
-            if only_conflicts and not tree_dict:
+            if (only_conflicts or ext_filter_active) and not tree_dict:
                 continue
             if not files:
                 continue
@@ -1071,12 +1465,16 @@ class PluginPanelModFilesMixin:
                 self._mf_iid_to_relstr[leaf_iid] = rel_str
                 self._mf_iid_to_path[leaf_iid] = f"{mod_path_prefix}/{fname}"
 
+        self._mf_last_ext_counts = agg_ext_counts
+        self._mf_filter_list_sync()
+
         if not rendered_any:
-            placeholder = (
-                "  (no conflicts in this separator)"
-                if only_conflicts else
-                "  (no files found in mods under this separator)"
-            )
+            if ext_filter_active:
+                placeholder = "  (no files match the filters)"
+            elif only_conflicts:
+                placeholder = "  (no conflicts in this separator)"
+            else:
+                placeholder = "  (no files found in mods under this separator)"
             self._mf_tree.insert("", "end", text=placeholder, tags=("dim",))
             return
 

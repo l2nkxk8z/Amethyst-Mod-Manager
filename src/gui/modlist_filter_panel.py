@@ -355,6 +355,8 @@ class ModListFilterPanelMixin:
             plugin_panel._close_data_filter_panel()
         if plugin_panel is not None and getattr(plugin_panel, "_ini_filter_panel_open", False):
             plugin_panel._close_ini_filter_panel()
+        if plugin_panel is not None and getattr(plugin_panel, "_mf_filter_panel_open", False):
+            plugin_panel._close_mf_filter_panel()
         # Remember plugin panel state so _close restores only if it was visible.
         app = self.winfo_toplevel()
         self._filter_plugin_panel_was_visible = bool(getattr(app, "_plugin_panel_visible", False))

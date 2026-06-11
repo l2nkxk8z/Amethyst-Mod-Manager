@@ -392,6 +392,8 @@ class PluginPanelDataMixin:
             self._close_plugin_filter_panel()
         if getattr(self, "_ini_filter_panel_open", False):
             self._close_ini_filter_panel()
+        if getattr(self, "_mf_filter_panel_open", False):
+            self._close_mf_filter_panel()
         self._data_filter_panel_open = True
         mod_panel.grid_columnconfigure(0, minsize=scaled(380))
         self._data_filter_side_panel.grid()

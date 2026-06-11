@@ -496,6 +496,11 @@ class PluginPanelIniMixin:
                 self._close_data_filter_panel()
             except Exception:
                 pass
+        if getattr(self, "_mf_filter_panel_open", False):
+            try:
+                self._close_mf_filter_panel()
+            except Exception:
+                pass
         app = self.winfo_toplevel()
         dl_panel = getattr(app, "_downloads_panel", None)
         if dl_panel is not None and getattr(dl_panel, "_filter_panel_open", False):
