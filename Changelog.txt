@@ -13,6 +13,7 @@
 - Fixed a bug where updating a mod while deployed could send the old versions files to overwrite
 - Added a 4gb patcher wizard for New Vegas
 - Fixed the mod files and data tabs showing conflicts for disabled mods
+- Various UI and UI scaling improvements
 
 - v1.3.8
 - Added support for Dragon Age: Origins
