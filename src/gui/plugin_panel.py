@@ -1752,7 +1752,13 @@ class PluginPanel(PluginPanelExeLauncherMixin, PluginPanelLOOTMixin,
             fm_mtime = fm_path.stat().st_mtime if fm_path.is_file() else 0.0
         except OSError:
             fm_mtime = 0.0
-        sig = (str(idx_path), idx_mtime, fm_mtime)
+        ml_path = (self._mod_files_profile_dir / "modlist.txt"
+                   if self._mod_files_profile_dir is not None else None)
+        try:
+            ml_mtime = ml_path.stat().st_mtime if ml_path and ml_path.is_file() else 0.0
+        except OSError:
+            ml_mtime = 0.0
+        sig = (str(idx_path), idx_mtime, fm_mtime, ml_mtime)
         cached = getattr(self, "_conflict_cache", None)
         if cached is not None and cached[0] == sig:
             return cached[1], cached[2]
@@ -1775,8 +1781,20 @@ class PluginPanel(PluginPanelExeLauncherMixin, PluginPanelLOOTMixin,
             except Exception:
                 full_index = None
         if full_index:
+            # Disabled mods can't conflict — leave them out of the count so a
+            # file shared only with a toggled-off mod isn't tagged as contested.
+            disabled: set[str] = set()
+            if ml_path is not None and ml_path.is_file():
+                try:
+                    from Utils.modlist import read_modlist
+                    disabled = {e.name for e in read_modlist(ml_path)
+                                if not e.is_separator and not e.enabled}
+                except Exception:
+                    disabled = set()
             _key_count: dict[str, int] = {}
             for _mn, (_norm, _root) in full_index.items():
+                if _mn in disabled:
+                    continue
                 for _k in _norm:
                     _key_count[_k] = _key_count.get(_k, 0) + 1
                 for _k in _root:

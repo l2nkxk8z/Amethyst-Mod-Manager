@@ -12,6 +12,7 @@
 - Selecting a text based file in the mod files tab opens an editor like in the ini files tab
 - Fixed a bug where updating a mod while deployed could send the old versions files to overwrite
 - Added a 4gb patcher wizard for New Vegas
+- Fixed the mod files and data tabs showing conflicts for disabled mods
 
 - v1.3.8
 - Added support for Dragon Age: Origins
