@@ -976,6 +976,48 @@ class PluginPanel(PluginPanelExeLauncherMixin, PluginPanelLOOTMixin,
         except Exception:
             return False
 
+    def _find_pack_trigger_plugin(self, mod_dir: Path, mod_name: str) -> Path | None:
+        """Return the real plugin in ``mod_dir`` (root) that an archive
+        packed for this mod should be named after, or None if the mod
+        ships no real plugin.
+
+        An archive only auto-loads when a same-stem plugin sits in the
+        load order.  Naming the archive after an existing plugin avoids
+        generating a redundant stub.  When the mod has several plugins
+        we prefer the one whose stem matches the mod folder, then fall
+        back to the first sorted by name (an archive can only be
+        triggered by ONE plugin name, so we must pick deterministically).
+
+        Stubs we generated ourselves are ignored — they aren't a real
+        plugin, and treating them as the trigger would defeat the point
+        of regenerating them.  Only the mod-folder root is scanned, to
+        match where the archive is written (the trigger plugin and the
+        archive must land in the same Data folder after deploy).
+        """
+        from Utils.bsa_writer import is_our_stub_plugin
+
+        exts = {e.lower() for e in (self._plugin_extensions or [".esp", ".esm", ".esl"])}
+        plugins: list[Path] = []
+        try:
+            for p in mod_dir.iterdir():
+                if not p.is_file() or p.suffix.lower() not in exts:
+                    continue
+                if is_our_stub_plugin(p):
+                    continue
+                plugins.append(p)
+        except OSError:
+            return None
+        if not plugins:
+            return None
+        # Prefer a plugin whose stem matches the mod folder name (case-
+        # insensitive); otherwise the first by name for determinism.
+        mod_lower = mod_name.lower()
+        plugins.sort(key=lambda p: p.name.lower())
+        for p in plugins:
+            if p.stem.lower() == mod_lower:
+                return p
+        return plugins[0]
+
     def _on_pack_bsa_click(self) -> None:
         """Pack the currently-selected mod's loose files into a BSA in that
         mod's folder. Runs on a background thread with a progress popup."""
@@ -1028,6 +1070,16 @@ class PluginPanel(PluginPanelExeLauncherMixin, PluginPanelLOOTMixin,
             return
 
         archive_suffix = "." + kind
+
+        # The archive only auto-loads when a same-stem plugin sits in the
+        # load order.  If the mod already ships a real plugin we name the
+        # archive after *that* plugin's stem (not the mod folder) so the
+        # game mounts it without us having to stamp out a redundant stub.
+        # `archive_stem` falls back to the mod-folder name when the mod
+        # has no real plugin — in that case a stub is generated below.
+        existing_plugin = self._find_pack_trigger_plugin(mod_dir, mod_name)
+        archive_stem = existing_plugin.stem if existing_plugin is not None else mod_name
+
         # FO4 / FO4 VR's auto-loader only mounts a BA2 when its filename
         # follows the "<plugin_stem> - Main.ba2" / " - Textures.ba2"
         # convention.  Vanilla and every community mod ships with that
@@ -1048,12 +1100,12 @@ class PluginPanel(PluginPanelExeLauncherMixin, PluginPanelLOOTMixin,
         # sibling there is OPTIONAL: a checkbox in _PackOptionsDialog
         # below decides.
         if kind == "ba2":
-            archive_path = mod_dir / f"{mod_name} - Main.ba2"
+            archive_path = mod_dir / f"{archive_stem} - Main.ba2"
             # archive_textures_path is set unconditionally for BA2; the
             # writer drops it if the mod has no DDS files.
-            archive_textures_path: Path | None = mod_dir / f"{mod_name} - Textures.ba2"
+            archive_textures_path: Path | None = mod_dir / f"{archive_stem} - Textures.ba2"
         else:
-            archive_path = mod_dir / f"{mod_name}{archive_suffix}"
+            archive_path = mod_dir / f"{archive_stem}{archive_suffix}"
             archive_textures_path = None  # may be set after the dialog
         # Show the options dialog: confirms the pack, surfaces the
         # overwrite warning if applicable, and lets the user opt into
@@ -1084,25 +1136,17 @@ class PluginPanel(PluginPanelExeLauncherMixin, PluginPanelLOOTMixin,
         # For BSA, only allocate the textures sibling path if the user
         # ticked the "Separate textures archive" checkbox.
         if kind == "bsa" and split_textures:
-            archive_textures_path = mod_dir / f"{mod_name} - Textures.bsa"
+            archive_textures_path = mod_dir / f"{archive_stem} - Textures.bsa"
 
         # An archive only auto-loads if a same-named plugin sits in the
-        # load order.  If the mod already ships a real same-stem plugin
-        # (.esp/.esm/.esl) we leave it alone; otherwise we stamp out a
-        # minimal stub.  A previously-generated stub is replaced — its
-        # only purpose is to be the trigger file, and the format may
-        # have evolved between packs.
-        from Utils.bsa_writer import is_our_stub_plugin
-        existing_plugin = next(
-            (
-                mod_dir / f"{mod_name}{ext}"
-                for ext in (".esp", ".esm", ".esl")
-                if (mod_dir / f"{mod_name}{ext}").exists()
-            ),
-            None,
-        )
+        # load order.  `existing_plugin` (resolved above, used to pick
+        # `archive_stem`) is the mod's real trigger plugin when one
+        # exists — we leave it alone.  It already excludes stubs we've
+        # generated, so `None` covers both "no plugin at all" and "only
+        # a previous stub": either way we (re)stamp a minimal stub named
+        # after the mod folder (its format may have evolved between packs).
         stub_plugin_path: Path | None = None
-        if existing_plugin is None or is_our_stub_plugin(existing_plugin):
+        if existing_plugin is None:
             stub_plugin_path = mod_dir / f"{mod_name}.esp"
 
         # Files the user has disabled in the Mod Files tab — skip them
