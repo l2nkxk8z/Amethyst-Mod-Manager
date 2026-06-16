@@ -2517,7 +2517,8 @@ class Fallout_76(Fallout_3):
         "bink2w64.dll", "chrome_elf.dll", "concrt140.dll", "d3dcompiler_43.dll",
         "d3dcompiler_46.dll", "d3dcompiler_47.dll", "libcef.dll", "libegl.dll",
         "libglesv2.dll", "msvcp140.dll", "ortp_x64.dll", "steam_api64.dll",
-        "vccorlib140.dll", "vcruntime140.dll", "vivoxsdk_x64.dll", "dxgi.dll",
+        "vccorlib140.dll", "vcruntime140.dll", "vivoxsdk_x64.dll", "dxgi.dll", 
+        "vivoxsdk.dll", "xaudio2_9redist.dll"
     })
 
     def _rename_non_whitelisted_dlls(self, log_fn) -> None:
