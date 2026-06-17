@@ -184,6 +184,11 @@ def _scan_dir(
                         # filemap so they don't get deployed into the game.
                         if entry.name.startswith("prefix_"):
                             continue
+                        # RE/Fluffy bundle option library — holds the original
+                        # option folders; only the materialised selection at the
+                        # mod root is deployed (see Utils/re_bundle.py).
+                        if entry.name == ".mm_bundle":
+                            continue
                         if not _is_utf8_safe(entry.name):
                             invalid_names.append(prefix + entry.name + "/")
                             continue

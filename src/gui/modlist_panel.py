@@ -222,6 +222,8 @@ def _scan_meta_flags_impl(entries: list, mods_dir: Path, compute_sizes: bool = F
     collection_bundled_mods: set[str] = set()
     collection_patched_mods: set[str] = set()
     xedit_modified_mods: dict[str, list[str]] = {}
+    bundle_mods: set[str] = set()  # RE/Fluffy single-mod bundles (have a [Bundle] spec)
+    from Utils.re_bundle import read_bundle_spec as _read_bundle_spec
     today = datetime.now().date()
     for entry in entries:
         if entry.is_separator:
@@ -279,6 +281,8 @@ def _scan_meta_flags_impl(entries: list, mods_dir: Path, compute_sizes: bool = F
                            if p.strip()]
                 if plugins:
                     xedit_modified_mods[entry.name] = plugins
+            if _read_bundle_spec(meta_path) is not None:
+                bundle_mods.add(entry.name)
         except Exception:
             pass
     return {
@@ -298,6 +302,7 @@ def _scan_meta_flags_impl(entries: list, mods_dir: Path, compute_sizes: bool = F
         "collection_bundled_mods": collection_bundled_mods,
         "collection_patched_mods": collection_patched_mods,
         "xedit_modified_mods": xedit_modified_mods,
+        "bundle_mods": bundle_mods,
     }
 
 
@@ -434,6 +439,14 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
             self._icon_note = ImageTk.PhotoImage(
                 PilImage.open(_note_path).convert("RGBA").resize((_icon_sz, _icon_sz), PilImage.LANCZOS))
 
+        # Bundle settings flag — shown on RE/Fluffy single-mod bundles; clicking
+        # it opens the Bundle Options dialog.
+        self._icon_settings: ImageTk.PhotoImage | None = None
+        _settings_path = _ICONS_DIR / "settings.png"
+        if _settings_path.is_file():
+            self._icon_settings = ImageTk.PhotoImage(
+                PilImage.open(_settings_path).convert("RGBA").resize((_icon_sz, _icon_sz), PilImage.LANCZOS))
+
         # xEdit-modified plugin flag — shown when a mod contains a plugin that
         # was edited in xEdit and moved back to staging on restore.
         self._icon_xedit: ImageTk.PhotoImage | None = None
@@ -511,6 +524,9 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
         # meta.ini's fromCollectionBundled / fromCollectionPatched flags.
         self._collection_bundled_mods: set[str] = set()
         self._collection_patched_mods: set[str] = set()
+        # RE/Fluffy single-mod bundles (carry a [Bundle] spec in meta.ini) — get a
+        # clickable settings flag that opens the Bundle Options dialog.
+        self._bundle_mods: set[str] = set()
         # Map mod name → list of plugin names edited in xEdit (from meta.ini's
         # xeditModifiedPlugins). Drives the brush flag in the Flags column.
         self._xedit_modified_mods: dict[str, list[str]] = {}
@@ -584,7 +600,7 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
         # Collapsed separators: set of sep names whose mods are hidden
         self._collapsed_seps: set[str] = set()
 
-        # Bundle groups: bundle_name → list of entry indices (computed on reload)
+        # Legacy bundle-group map (always empty now — bundles are plain mods).
         self._bundle_groups: dict[str, list[int]] = {}
 
         # Search/filter
@@ -1284,40 +1300,91 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
             self.__profile_state.pop("mod_strip_prefixes", None)
 
     def _compute_bundle_groups(self) -> None:
-        """Rebuild _bundle_groups from current _entries.
+        """No-op kept for call sites.
 
-        Maps bundle_name → [entry_idx, ...] in order.  A mod is only treated
-        as a bundle variant when a matching ``<bundle_name>_separator`` entry
-        exists — otherwise any mod whose folder name happens to contain ``__``
-        (e.g. from the uploader's archive filename) would be misclassified.
+        RE/Fluffy bundles now install as a single normal mod (option selection
+        is materialised inside the mod folder via Utils/re_bundle.py), so the
+        mod list no longer has bundle "variants" or radio groups.  ``_bundle_groups``
+        stays empty so the legacy bundle-aware code paths treat every row as an
+        ordinary mod.
         """
-        sep_display_names = {
-            e.display_name for e in self._entries if e.is_separator
-        }
-        groups: dict[str, list[int]] = {}
-        for i, entry in enumerate(self._entries):
-            bname = entry.bundle_name
-            if bname is not None and bname in sep_display_names:
-                groups.setdefault(bname, []).append(i)
-        self._bundle_groups = groups
+        self._bundle_groups = {}
 
     def _bundle_name_of(self, idx: int) -> "str | None":
-        """Return the bundle name for entry *idx* only if it's a validated
-        bundle variant (i.e. has a matching bundle separator).  Prevents
-        false positives from incidental ``__`` in mod folder names."""
-        if not (0 <= idx < len(self._entries)):
-            return None
-        bname = self._entries[idx].bundle_name
-        if bname is not None and bname in self._bundle_groups:
-            return bname
+        """Legacy hook — bundles are plain mods now, so always None."""
         return None
 
     def _variant_name_of(self, idx: int) -> "str | None":
-        """Return the variant name for entry *idx* only if it's a validated
-        bundle variant."""
-        if self._bundle_name_of(idx) is None:
+        """Legacy hook — bundles are plain mods now, so always None."""
+        return None
+
+    # ------------------------------------------------------------------
+    # RE/Fluffy single-mod bundles (option selection)
+    # ------------------------------------------------------------------
+    def _bundle_spec_path(self, idx: int) -> "Path | None":
+        """Return the meta.ini path for entry *idx* if it's a RE/Fluffy bundle
+        mod (carries a ``[Bundle]`` spec), else None."""
+        if not (0 <= idx < len(self._entries)) or self._staging_root is None:
             return None
-        return self._entries[idx].variant_name
+        entry = self._entries[idx]
+        if entry.is_separator:
+            return None
+        meta = self._staging_root / entry.name / "meta.ini"
+        try:
+            from Utils.re_bundle import read_bundle_spec
+            return meta if read_bundle_spec(meta) is not None else None
+        except Exception:
+            return None
+
+    def _open_bundle_options(self, idx: int) -> None:
+        """Open the Bundle Options selector for the bundle mod at *idx* — an
+        in-app overlay over the plugin panel (same pattern as separator
+        settings).  On Save the new selection is materialised, the mod is
+        re-indexed, and the filemap rebuilt."""
+        meta = self._bundle_spec_path(idx)
+        if meta is None or self._staging_root is None:
+            return
+        from Utils.re_bundle import read_bundle_spec
+        spec = read_bundle_spec(meta)
+        if spec is None:
+            return
+        mod_name = self._entries[idx].name
+
+        app = self.winfo_toplevel()
+        show_fn = getattr(app, "show_bundle_options_panel", None)
+        if show_fn is None:
+            return
+        def _on_done(panel):
+            if getattr(panel, "result", None) is not None:
+                self._apply_bundle_selection(mod_name, meta, panel.result)
+        from Utils.re_bundle import BUNDLE_LIB_DIR
+        lib_dir = self._staging_root / mod_name / BUNDLE_LIB_DIR
+        show_fn(mod_name, spec, _on_done, lib_dir=lib_dir)
+
+    def _apply_bundle_selection(self, mod_name, meta_path, new_spec) -> None:
+        """Persist *new_spec*, re-materialise the bundle's selection, re-index
+        just that mod, and rebuild the filemap."""
+        if self._staging_root is None:
+            return
+        from Utils.re_bundle import write_bundle_spec, materialize_selection
+        write_bundle_spec(meta_path, new_spec)
+        materialize_selection(self._staging_root / mod_name, new_spec)
+        # Re-index just this mod (scanner skips .mm_bundle/), then rebuild filemap.
+        try:
+            rescan_mods_in_index(
+                self._staging_root.parent / "modindex.bin",
+                self._staging_root, [mod_name],
+                strip_prefixes=getattr(self._game, "mod_folder_strip_prefixes", set()) or None,
+                allowed_extensions=getattr(self._game, "install_extensions", None) or None,
+                normalize_folder_case=getattr(self._game, "normalize_folder_case", True),
+                exclude_dirs=self._filemap_exclude_dirs or None,
+                root_folder_mods=set(self._root_folder_mods) if self._root_folder_mods else None,
+            )
+        except Exception as e:
+            self._log(f"Bundle options: reindex failed: {e}")
+        self._rebuild_filemap()
+        self._redraw()
+        _show_mod_notification(self.winfo_toplevel(), f"Updated bundle: {mod_name}")
 
     def _is_bundle_separator(self, idx: int) -> bool:
         """True if the entry at *idx* is a separator that owns a bundle block."""
@@ -1527,6 +1594,7 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
         self._collection_bundled_mods = results.get("collection_bundled_mods", set())
         self._collection_patched_mods = results.get("collection_patched_mods", set())
         self._xedit_modified_mods = results.get("xedit_modified_mods", {})
+        self._bundle_mods = results.get("bundle_mods", set())
         if self._filter_panel_open:
             self._refresh_filter_category_list()
         self._vis_dirty = True
@@ -2640,7 +2708,7 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
                     # lookups) so an unchanged slot can skip its canvas calls.
                     _bname_valid = self._bundle_name_of(i)
                     is_bundle_variant = _bname_valid is not None
-                    _display_label = (f"{_bname_valid} - {self._variant_name_of(i)}"
+                    _display_label = (self._variant_name_of(i)
                                       if is_bundle_variant else entry.name)
                     cat_text = self._category_names.get(entry.name, "")
 
@@ -2650,6 +2718,8 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
                     _flags: list = []
                     if entry.name in self._mod_notes_map and self._icon_note:
                         _flags.append(("img", self._icon_note))
+                    if entry.name in self._bundle_mods and self._icon_settings:
+                        _flags.append(("img", self._icon_settings))
                     has_missing = (entry.name in self._missing_reqs
                                    and entry.name not in self._ignored_missing_reqs)
                     if has_missing and self._icon_warning:
@@ -3591,6 +3661,8 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
                 _items: list[str] = []
                 if entry.name in self._mod_notes_map:
                     _items.append("note")
+                if entry.name in self._bundle_mods:
+                    _items.append("bundle")
                 if has_missing:
                     _items.append("missing")
                 if entry.locked:
@@ -3620,6 +3692,9 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
                         if abs(event.x - _fx) <= _HIT_RADIUS:
                             if _kind == "note":
                                 self._open_note_editor_by_name(entry.name)
+                                return
+                            elif _kind == "bundle":
+                                self._open_bundle_options(idx)
                                 return
                             elif _kind == "missing":
                                 dep_names = self._missing_reqs_detail.get(entry.name, [])
@@ -4479,6 +4554,8 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
         _items: list[str] = []
         if entry.name in self._mod_notes_map:
             _items.append("note")
+        if entry.name in self._bundle_mods:
+            _items.append("bundle")
         if has_missing:
             _items.append("missing")
         if entry.locked:
@@ -4513,6 +4590,8 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
                     tip = (_txt[:500] + "…") if len(_txt) > 500 else _txt
                     if not tip:
                         tip = "Note"
+                elif _kind == "bundle":
+                    tip = "Click here to open bundle settings"
                 elif _kind == "missing":
                     missing = self._missing_reqs_detail.get(entry.name, [])
                     tip = ("Missing requirements:\n" + "\n".join(f"  - {m}" for m in missing)
@@ -5148,6 +5227,11 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
         if (not c.is_separator and not c.is_locked
                 and not c.is_bundle_var and not c.is_multi):
             menu.add_command("Rename mod", lambda: self._rename_mod(idx))
+
+        # Bundle options… (RE/Fluffy single-mod bundles)
+        if (not c.is_separator and not c.is_multi
+                and self._bundle_spec_path(idx) is not None):
+            menu.add_command("Bundle options…", lambda: self._open_bundle_options(idx))
 
         # Rename separator
         if c.is_separator and not c.is_synthetic and not c.is_bundle_sep:
@@ -5788,6 +5872,7 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
             remove_from_bsa_index(index_path.parent / "bsa_index.bin", removed_names)
         self._sel_idx = -1
         self._sel_set = set()
+        self._compute_bundle_groups()
         self._invalidate_derived_caches()
         self._save_modlist()
         self._rebuild_filemap()

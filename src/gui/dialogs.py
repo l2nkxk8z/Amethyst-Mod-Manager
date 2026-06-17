@@ -75,7 +75,7 @@ from Utils.config_paths import get_exe_args_path, get_profile_exe_args_path, get
 
 from gui.ctk_components import CTkAlert, CTkLoader, ICON_PATH
 from gui.tk_tooltip import TkTooltip
-from gui.wheel_compat import LEGACY_WHEEL_REDUNDANT
+from gui.wheel_compat import LEGACY_WHEEL_REDUNDANT, bind_scrollable_wheel
 from Utils.xdg import xdg_open, open_url
 
 
@@ -3984,6 +3984,221 @@ class DisablePluginsPanel(ctk.CTkFrame):
         self._on_done(self)
 
     def _on_cancel(self):
+        self._on_done(self)
+
+
+class BundleOptionsPanel(ctk.CTkFrame):
+    """Inline panel to pick a RE/Fluffy bundle's active options.  Overlays
+    _plugin_panel_container.  Select-one groups render as radios; independent
+    ("Optional — any") groups as checkboxes with ▲/▼ reorder buttons.
+
+    Selection + order are written straight into a deep-copied BundleSpec as the
+    user interacts, so ``result`` is that spec on Save (None on Cancel).  Option
+    order within a group is the override order: when two selected options write
+    the same file, the one LOWER in the list wins (applied last).
+    """
+
+    def __init__(self, parent, mod_name: str, spec, on_done=None,
+                 lib_dir=None, on_preview=None, on_preview_clear=None):
+        super().__init__(parent, fg_color=BG_DEEP, corner_radius=0)
+        import copy
+        from pathlib import Path
+        self.result = None
+        self._spec = copy.deepcopy(spec)
+        self._on_done = on_done or (lambda p: None)
+        # Bundle library dir (<mod>/.mm_bundle) for resolving option screenshots,
+        # and callbacks to show/clear the preview over the modlist panel.
+        self._lib_dir = Path(lib_dir) if lib_dir else None
+        self._on_preview = on_preview
+        self._on_preview_clear = on_preview_clear
+
+        title_bar = ctk.CTkFrame(self, fg_color=BG_PANEL, corner_radius=0, height=36)
+        title_bar.pack(fill="x")
+        title_bar.pack_propagate(False)
+        ctk.CTkLabel(
+            title_bar, text=f"Bundle Options — {mod_name}",
+            font=FONT_BOLD, text_color=TEXT_MAIN, anchor="w",
+        ).pack(side="left", padx=12)
+        ctk.CTkButton(
+            title_bar, text="✕", width=32, height=32, font=FONT_BOLD,
+            fg_color=BG_PANEL, hover_color=BG_HOVER, text_color=TEXT_MAIN,
+            command=self._on_cancel,
+        ).pack(side="right", padx=4)
+        ctk.CTkFrame(self, fg_color=BORDER, height=1, corner_radius=0).pack(fill="x")
+
+        ctk.CTkLabel(
+            self,
+            text="Choose which options are active. “Select one” groups allow a "
+                 "single choice; optional add-ons can be combined.\n"
+                 "When optional add-ons overlap, the one lower in the list wins "
+                 "— use ▲/▼ to reorder.",
+            font=FONT_SMALL, text_color=TEXT_DIM, anchor="w", justify="left",
+        ).pack(anchor="w", padx=16, pady=(12, 6))
+
+        self._scroll = ctk.CTkScrollableFrame(self, fg_color=BG_PANEL, corner_radius=6)
+        self._scroll.pack(fill="both", expand=True, padx=12, pady=(0, 4))
+        self._scroll.grid_columnconfigure(0, weight=1)
+
+        bar = ctk.CTkFrame(self, fg_color=BG_PANEL, corner_radius=0, height=52)
+        bar.pack(fill="x")
+        bar.pack_propagate(False)
+        ctk.CTkFrame(bar, fg_color=BORDER, height=1, corner_radius=0).pack(
+            side="top", fill="x")
+        ctk.CTkButton(
+            bar, text="Cancel", width=80, height=28, font=FONT_NORMAL,
+            fg_color=BG_HEADER, hover_color=BG_HOVER, text_color=TEXT_MAIN,
+            command=self._on_cancel,
+        ).pack(side="right", padx=(4, 12), pady=12)
+        ctk.CTkButton(
+            bar, text="Save", width=80, height=28, font=FONT_BOLD,
+            fg_color=ACCENT, hover_color=ACCENT_HOV, text_color=TEXT_ON_ACCENT,
+            command=self._on_ok,
+        ).pack(side="right", padx=4, pady=12)
+
+        self._build_rows()
+        # Bind X11 wheel notches once; bind_scrollable_wheel re-walks descendants
+        # on <Enter>, so rows rebuilt by a reorder keep scrolling without
+        # re-binding (which would stack <Enter> handlers).
+        bind_scrollable_wheel(self._scroll)
+
+        # Show the first selected option's image as the initial preview.
+        _first = next((o for g in self._spec.groups for o in g.options
+                       if o.selected and not o.is_label), None)
+        if _first is not None:
+            self._preview_option(_first.folder)
+
+    def _build_rows(self):
+        """(Re)build the option rows from the current spec.  Called on init and
+        after any reorder so the displayed order matches ``group.options``."""
+        for child in self._scroll.winfo_children():
+            child.destroy()
+
+        row = 0
+        for gi, group in enumerate(self._spec.groups):
+            ctk.CTkLabel(
+                self._scroll, text=group.name, font=FONT_BOLD, text_color=TEXT_MAIN,
+                anchor="w",
+            ).grid(row=row, column=0, columnspan=2, sticky="w", padx=8, pady=(12, 0)); row += 1
+            ctk.CTkLabel(
+                self._scroll, text=("Select one" if group.select_one else "Optional — any"),
+                font=FONT_SMALL, text_color=TEXT_DIM, anchor="w",
+            ).grid(row=row, column=0, columnspan=2, sticky="w", padx=8, pady=(0, 2)); row += 1
+
+            if group.select_one:
+                var = tk.IntVar(
+                    value=next((i for i, o in enumerate(group.options) if o.selected), 0))
+                def _pick(g=group, v=var):
+                    for i, o in enumerate(g.options):
+                        o.selected = (i == v.get()) and not o.is_label
+                for oi, opt in enumerate(group.options):
+                    if opt.is_label:
+                        ctk.CTkLabel(
+                            self._scroll, text=opt.label, font=FONT_SMALL,
+                            text_color=TEXT_DIM, anchor="w",
+                        ).grid(row=row, column=0, sticky="ew", padx=24, pady=(6, 0)); row += 1
+                        continue
+                    rb = ctk.CTkRadioButton(
+                        self._scroll, text=opt.label, variable=var, value=oi,
+                        command=_pick, font=FONT_NORMAL, text_color=TEXT_MAIN,
+                        fg_color=ACCENT, hover_color=ACCENT_HOV, border_color=BORDER,
+                    )
+                    rb.grid(row=row, column=0, sticky="w", padx=24, pady=2); row += 1
+                    self._bind_hover_preview(rb, opt.folder)
+            else:
+                n = len(group.options)
+                for oi, opt in enumerate(group.options):
+                    if opt.is_label:
+                        # Content-less divider / info entry — non-selectable label
+                        # preserving the author's visual sectioning.
+                        ctk.CTkLabel(
+                            self._scroll, text=opt.label, font=FONT_SMALL,
+                            text_color=TEXT_DIM, anchor="w",
+                        ).grid(row=row, column=0, columnspan=2, sticky="ew",
+                               padx=24, pady=(6, 0)); row += 1
+                        continue
+                    rowf = ctk.CTkFrame(self._scroll, fg_color="transparent")
+                    rowf.grid(row=row, column=0, columnspan=2, sticky="ew", padx=18, pady=1)
+                    rowf.grid_columnconfigure(0, weight=1)
+                    bvar = tk.BooleanVar(value=opt.selected)
+                    def _toggle(o=opt, v=bvar):
+                        o.selected = bool(v.get())
+                    cb = ctk.CTkCheckBox(
+                        rowf, text=opt.label, variable=bvar, command=_toggle,
+                        font=FONT_NORMAL, text_color=TEXT_MAIN,
+                        fg_color=ACCENT, hover_color=ACCENT_HOV,
+                        checkmark_color="white", border_color=BORDER,
+                    )
+                    cb.grid(row=0, column=0, sticky="w")
+                    self._bind_hover_preview(cb, opt.folder)
+                    self._bind_hover_preview(rowf, opt.folder)
+                    ctk.CTkButton(
+                        rowf, text="▲", width=26, height=24, font=FONT_SMALL,
+                        fg_color=BG_HEADER, hover_color=BG_HOVER, text_color=TEXT_MAIN,
+                        state=("normal" if oi > 0 else "disabled"),
+                        command=lambda g=group, i=oi: self._move(g, i, -1),
+                    ).grid(row=0, column=1, padx=(4, 0))
+                    ctk.CTkButton(
+                        rowf, text="▼", width=26, height=24, font=FONT_SMALL,
+                        fg_color=BG_HEADER, hover_color=BG_HOVER, text_color=TEXT_MAIN,
+                        state=("normal" if oi < n - 1 else "disabled"),
+                        command=lambda g=group, i=oi: self._move(g, i, 1),
+                    ).grid(row=0, column=2, padx=(4, 0))
+                    row += 1
+
+    def _move(self, group, idx: int, delta: int):
+        """Swap option *idx* with its neighbour and rebuild the rows."""
+        j = idx + delta
+        if 0 <= j < len(group.options):
+            group.options[idx], group.options[j] = group.options[j], group.options[idx]
+            self._build_rows()
+
+    def _bind_hover_preview(self, widget, folder: str) -> None:
+        """Show the option's image while the pointer is over *widget*.  Bound on
+        the widget and its internal children so hover is reliable across the CTk
+        label/check parts.  The preview is not cleared on leave (the next hover
+        replaces it) to avoid flicker when moving between rows."""
+        if self._on_preview is None or self._lib_dir is None:
+            return
+        def _enter(_e=None, f=folder):
+            self._preview_option(f)
+        def _walk(w):
+            try:
+                w.bind("<Enter>", _enter, add="+")
+            except Exception:
+                pass
+            for child in w.winfo_children():
+                _walk(child)
+        _walk(widget)
+
+    def _preview_option(self, folder: str) -> None:
+        """Show the option's screenshot in the modlist-panel preview, or clear
+        the preview if it has no image."""
+        if self._on_preview is None or self._lib_dir is None:
+            return
+        try:
+            from Utils.re_bundle import option_image
+            img = option_image(self._lib_dir, folder)
+        except Exception:
+            img = None
+        if img is not None:
+            self._on_preview(img)
+        else:
+            self._clear_preview()
+
+    def _clear_preview(self) -> None:
+        if self._on_preview_clear is not None:
+            try:
+                self._on_preview_clear()
+            except Exception:
+                pass
+
+    def _on_ok(self):
+        # Selection + order already live in self._spec (written on each interaction).
+        self.result = self._spec
+        self._on_done(self)
+
+    def _on_cancel(self):
+        self.result = None
         self._on_done(self)
 
 

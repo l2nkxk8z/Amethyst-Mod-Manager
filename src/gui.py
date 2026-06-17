@@ -2071,6 +2071,51 @@ class App(ctk.CTk):
     def hide_disable_plugins_panel(self):
         self._hide_plugin_overlay("_disable_plugins_panel")
 
+    # -- Bundle options panel (overlays plugin panel) -----------------------
+
+    def show_bundle_options_panel(self, mod_name, spec, on_done, lib_dir=None):
+        self._ensure_plugin_panel_visible()
+        from gui.dialogs import BundleOptionsPanel
+        def _factory():
+            def _done(panel):
+                self.hide_bundle_image_preview()  # close preview with the dialog
+                self._hide_plugin_overlay("_bundle_options_panel")
+                on_done(panel)
+            return BundleOptionsPanel(
+                self._plugin_panel_container,
+                mod_name=mod_name, spec=spec, on_done=_done,
+                lib_dir=lib_dir,
+                on_preview=self.show_bundle_image_preview,
+                on_preview_clear=self.hide_bundle_image_preview,
+            )
+        self._show_plugin_overlay("_bundle_options_panel", _factory)
+
+    def hide_bundle_options_panel(self):
+        self._hide_plugin_overlay("_bundle_options_panel")
+
+    # -- Bundle option image preview (over the modlist panel) ----------------
+
+    def show_bundle_image_preview(self, path):
+        """Show *path* in a lightbox over the modlist panel (the selected bundle
+        option's screenshot).  Reuses the Mod Files image overlay."""
+        from gui.image_preview_overlay import ImagePreviewOverlay
+        host = self._mod_panel_container
+        overlay = getattr(self, "_bundle_image_preview", None)
+        if overlay is None or not overlay.winfo_exists():
+            overlay = ImagePreviewOverlay(host, on_close=self.hide_bundle_image_preview)
+            overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+            self._bundle_image_preview = overlay
+        overlay.show(path)
+
+    def hide_bundle_image_preview(self):
+        overlay = getattr(self, "_bundle_image_preview", None)
+        self._bundle_image_preview = None
+        if overlay is not None:
+            try:
+                overlay.destroy()
+            except Exception:
+                pass
+
     # -- Optional mods panel (overlays plugin panel) --------------------------
 
     def show_optional_mods_panel(self, optional_mods: list, on_done, pre_skipped_fids=None):
