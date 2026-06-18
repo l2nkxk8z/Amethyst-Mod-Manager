@@ -613,6 +613,11 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
         # plain click leaves the list re-sorted.  Holds (idx, cy) until the first
         # real motion promotes it to a live drag, or release treats it as a click.
         self._pending_multidrag: tuple[int, int] | None = None
+        # True when the pending drag is a locked separator's whole block — the
+        # promotion in _on_mouse_drag rebuilds the block from _sep_block_range
+        # and activates with is_block=True.  Cleared whenever _pending_multidrag
+        # is cleared.
+        self._pending_sep_block: bool = False
         self._drag_scroll_after: str | None = None  # after() id for auto-scroll repeat
         self._drag_last_event_y: int = 0  # last widget-space Y from mouse drag
 
@@ -3416,17 +3421,11 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
 
             # Show the static divider (BOUNDARY_ROW sentinel) between the last
             # user group and the ungrouped float so it's clear where that group
-            # ends.  Only when user separators exist and the last one (the group
-            # rendered directly above the float) is expanded — when it's
-            # collapsed the divider is shown only during a drag, not statically.
-            _last_user_sep = user_groups[0][0] if user_groups else None
-            _last_sep_collapsed = (
-                _last_user_sep is not None
-                and self._entries[_last_user_sep].name in self._collapsed_seps
-            )
-            self._static_boundary_visible = (
-                bool(user_groups) and not _last_sep_collapsed
-            )
+            # ends.  Shown permanently whenever user separators exist (regardless
+            # of whether the last one is expanded/collapsed) so it never appears
+            # or disappears on click — that toggling caused a visible flicker
+            # when selecting a mod or separator.
+            self._static_boundary_visible = bool(user_groups)
         else:
             self._static_boundary_visible = False
 
@@ -3745,6 +3744,7 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
         # Cancel any previous pending drag
         self._cancel_drag_timer()
         self._pending_multidrag = None
+        self._pending_sep_block = False
         cy = self._event_canvas_y(event)
         idx = self._canvas_y_to_index(cy)
         # The transient ungrouped-float boundary row is non-interactive — never
@@ -3901,18 +3901,16 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
                 self._sel_set = {idx}
                 if self._on_mod_selected_cb is not None:
                     self._on_mod_selected_cb()
-                # Regular separators — activate drag immediately
-                if self._sep_locks.get(self._entries[idx].name, False):
-                    blk = self._sep_block_range(idx)
-                    pending_block = [
-                        (self._entries[i], self._check_vars[i])
-                        for i in blk
-                    ]
-                    is_block = True
-                else:
-                    pending_block = []
-                    is_block = False
-                self._activate_drag(idx, cy, is_block, pending_block)
+                # Defer activation for ALL separators until the pointer actually
+                # moves.  Activating immediately would invert _entries in
+                # reverse-priority mode for what is usually a plain click, and
+                # the invert→restore round-trip could leave a different
+                # separator showing as expanded (see _pending_multidrag).
+                # Locked separators drag their whole block — flag that so the
+                # promotion rebuilds the block from _sep_block_range.
+                self._pending_multidrag = (idx, cy)
+                self._pending_sep_block = self._sep_locks.get(
+                    self._entries[idx].name, False)
                 self._redraw()
             return
 
@@ -4482,7 +4480,15 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
             if abs(self._event_canvas_y(event) - _p_cy) < self.ROW_H // 2:
                 return
             self._pending_multidrag = None
-            self._activate_drag(_p_idx, _p_cy, False, [])
+            if self._pending_sep_block:
+                # Locked separator: rebuild its block now (entries are still in
+                # their pre-drag state) and activate as a full-block drag.
+                self._pending_sep_block = False
+                _blk = self._sep_block_range(_p_idx)
+                _block = [(self._entries[i], self._check_vars[i]) for i in _blk]
+                self._activate_drag(_p_idx, _p_cy, True, _block)
+            else:
+                self._activate_drag(_p_idx, _p_cy, False, [])
 
         if self._drag_idx < 0 or not self._entries:
             return
@@ -4700,6 +4706,7 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
         if self._pending_multidrag is not None:
             _p_idx, _ = self._pending_multidrag
             self._pending_multidrag = None
+            self._pending_sep_block = False
             self._sel_idx = _p_idx
             self._sel_set = {_p_idx}
             if self._on_mod_selected_cb is not None:
