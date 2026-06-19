@@ -912,7 +912,11 @@ class OptionalModsPanel(ctk.CTkFrame):
         scroll.pack(fill="both", expand=True, padx=12, pady=(0, 4))
         scroll.grid_columnconfigure(0, weight=1)
 
-        for mod in optional_mods:
+        sorted_mods = sorted(
+            optional_mods,
+            key=lambda m: (m.mod_name or m.file_name or "(Unknown)").casefold(),
+        )
+        for mod in sorted_mods:
             var = tk.BooleanVar(value=mod.file_id not in _pre_skipped)
             self._vars[mod.file_id] = var
             name_text = mod.mod_name or mod.file_name or "(Unknown)"
@@ -2754,7 +2758,8 @@ class CollectionDetailDialog(tk.Frame):
         # Step 2: Install each mod, tracking the folder names in order
         # ------------------------------------------------------------------
         # Pre-scan staging dir:
-        #   already_installed_by_fid : file_id → folder name (from meta.ini fileid)
+        #   already_installed_by_ids : (mod_id, file_id) → folder (from meta.ini)
+        #   already_installed_by_fid : file_id → folder, legacy modid=0 only
         #   staging_lower_map        : lower(folder_name) → actual folder name
         # Used together to skip mods already installed in a previous (partial) run.
         #
@@ -2763,10 +2768,18 @@ class CollectionDetailDialog(tk.Frame):
         # to only the mods that are explicitly listed in *this* profile's
         # modlist.txt — otherwise mods installed for unrelated profiles will
         # produce false-positive "already installed" matches and be silently
-        # skipped.  The file_id exact-match (already_installed_by_fid) is safe
-        # to populate from all folders, because a file_id collision across
-        # different mod pages is essentially impossible.
-        already_installed_by_fid: dict[int, str] = {}  # file_id → staging folder name
+        # skipped.  The (mod_id, file_id) exact-match is safe to populate from
+        # all folders, because that pair is globally unique (only a byte-identical
+        # file shares both ids) — file_id alone is not, so it is only trusted for
+        # legacy installs that lack a mod_id.
+        # (mod_id, file_id) → folder is the authoritative match: a mod is only
+        # "already installed" when BOTH ids match (same mod page AND same file).
+        # file_id alone is not globally unique — two different mod pages can
+        # share a file_id — so matching on file_id alone risks a false positive.
+        already_installed_by_ids: dict[tuple[int, int], str] = {}  # (mod_id, file_id) → folder
+        # Legacy fallback: installs whose meta.ini predates mod_id capture have
+        # modid=0; for those we still match on file_id alone (see _match_existing).
+        already_installed_by_fid: dict[int, str] = {}  # file_id → folder (modid=0 only)
         staging_lower_map: dict[str, str] = {}          # lower(name) → actual name
 
         # Build the set of mod folder names that are actually in this profile.
@@ -2794,15 +2807,30 @@ class CollectionDetailDialog(tk.Frame):
                     _parser = _cp.ConfigParser()
                     _parser.read(str(meta_ini), encoding="utf-8")
                     fid_str = _parser.get("General", "fileid", fallback="").strip()
+                    mid_str = _parser.get("General", "modid", fallback="").strip()
                     if fid_str and fid_str != "0":
                         # When skip_existing is set, only record mods that are
                         # actually in this profile's modlist (avoids cross-profile
                         # false positives).
                         if skip_existing and mod_dir.name.lower() not in _profile_mod_names:
                             continue
-                        already_installed_by_fid[int(fid_str)] = mod_dir.name
+                        _fid = int(fid_str)
+                        _mid = int(mid_str) if mid_str.isdigit() else 0
+                        if _mid > 0:
+                            already_installed_by_ids[(_mid, _fid)] = mod_dir.name
+                        else:
+                            already_installed_by_fid[_fid] = mod_dir.name
                 except Exception:
                     pass
+
+        def _match_existing(mod) -> str:
+            """Return the staging folder of an already-installed copy of *mod*,
+            matching on (mod_id, file_id) first and falling back to file_id alone
+            only for legacy installs that lack a mod_id. Returns "" if none."""
+            _mid = schema_file_id_to_mod_id.get(mod.file_id, 0) or getattr(mod, "mod_id", 0) or 0
+            if _mid > 0 and (_mid, mod.file_id) in already_installed_by_ids:
+                return already_installed_by_ids[(_mid, mod.file_id)]
+            return already_installed_by_fid.get(mod.file_id, "")
 
         # ------------------------------------------------------------------
         # Remove staging folders for unticked optional mods
@@ -2814,8 +2842,8 @@ class CollectionDetailDialog(tk.Frame):
                 if not mod.file_id or mod.file_id not in skipped_fids:
                     continue
 
-                # Match by file_id first (same as classify step)
-                folder_name = already_installed_by_fid.get(mod.file_id, "")
+                # Match by (mod_id, file_id) first (same as classify step)
+                folder_name = _match_existing(mod)
 
                 # Fallback: match by predicted folder name (same logic as classify)
                 if not folder_name:
@@ -2869,11 +2897,11 @@ class CollectionDetailDialog(tk.Frame):
                 skipped += 1
                 continue
 
-            # Check 1: fileid in meta.ini matches exactly
-            existing_folder: str = ""
-            if mod.file_id in already_installed_by_fid:
-                existing_folder = already_installed_by_fid[mod.file_id]
-            else:
+            # Check 1: (mod_id, file_id) in meta.ini matches exactly. Both ids
+            # must match — file_id alone isn't globally unique. Legacy installs
+            # with modid=0 fall back to file_id-only inside _match_existing.
+            existing_folder: str = _match_existing(mod)
+            if not existing_folder:
                 # Check 2: predicted folder name (logicalFilename / schema name / mod_name)
                 logical = schema_file_id_to_logical.get(mod.file_id, "") or ""
                 schema_name = schema_pos_to_name.get(schema_file_id_to_pos.get(mod.file_id, -1), "") or ""
@@ -2980,6 +3008,7 @@ class CollectionDetailDialog(tk.Frame):
         # downstream consumer needs this map to find every collection mod —
         # not just the freshly-installed ones.
         _install_results: dict[int, str] = dict(already_installed_by_fid)
+        _install_results.update({fid: folder for (_mid, fid), folder in already_installed_by_ids.items()})
         _fomod_deferred: list = []  # (mod, result, effective_domain) tuples deferred for post-install
         _bain_deferred: list = []   # BAIN mods deferred — processed before FOMODs
 
@@ -5289,6 +5318,9 @@ class CollectionDetailDialog(tk.Frame):
         # ------------------------------------------------------------------
         # Step 2: Classify already-installed mods (same as _run_install)
         # ------------------------------------------------------------------
+        # (mod_id, file_id) → folder is authoritative; file_id-only map is the
+        # legacy fallback for installs whose meta.ini predates mod_id capture.
+        already_installed_by_ids: dict[tuple[int, int], str] = {}
         already_installed_by_fid: dict[int, str] = {}
         staging_lower_map: dict[str, str] = {}
         _profile_mod_names: set[str] = set()
@@ -5313,12 +5345,26 @@ class CollectionDetailDialog(tk.Frame):
                     _parser = _cp.ConfigParser()
                     _parser.read(str(meta_ini), encoding="utf-8")
                     fid_str = _parser.get("General", "fileid", fallback="").strip()
+                    mid_str = _parser.get("General", "modid", fallback="").strip()
                     if fid_str and fid_str != "0":
                         if skip_existing and mod_dir.name.lower() not in _profile_mod_names:
                             continue
-                        already_installed_by_fid[int(fid_str)] = mod_dir.name
+                        _fid = int(fid_str)
+                        _mid = int(mid_str) if mid_str.isdigit() else 0
+                        if _mid > 0:
+                            already_installed_by_ids[(_mid, _fid)] = mod_dir.name
+                        else:
+                            already_installed_by_fid[_fid] = mod_dir.name
                 except Exception:
                     pass
+
+        def _match_existing(mod) -> str:
+            """(mod_id, file_id) match first; file_id-only fallback for legacy
+            installs lacking a mod_id. Returns "" if no copy is installed."""
+            _mid = schema_file_id_to_mod_id.get(mod.file_id, 0) or getattr(mod, "mod_id", 0) or 0
+            if _mid > 0 and (_mid, mod.file_id) in already_installed_by_ids:
+                return already_installed_by_ids[(_mid, mod.file_id)]
+            return already_installed_by_fid.get(mod.file_id, "")
 
         # Remove staging folders for unticked optional mods
         if skipped_fids and skipped_mods:
@@ -5327,7 +5373,7 @@ class CollectionDetailDialog(tk.Frame):
             for mod in skipped_mods:
                 if not mod.file_id or mod.file_id not in skipped_fids:
                     continue
-                folder_name = already_installed_by_fid.get(mod.file_id, "")
+                folder_name = _match_existing(mod)
                 if not folder_name:
                     logical = schema_file_id_to_logical.get(mod.file_id, "") or ""
                     schema_name = schema_pos_to_name.get(
@@ -5367,10 +5413,8 @@ class CollectionDetailDialog(tk.Frame):
             if not mod.file_id:
                 skipped += 1
                 continue
-            existing_folder = ""
-            if mod.file_id in already_installed_by_fid:
-                existing_folder = already_installed_by_fid[mod.file_id]
-            else:
+            existing_folder = _match_existing(mod)
+            if not existing_folder:
                 logical = schema_file_id_to_logical.get(mod.file_id, "") or ""
                 schema_name = schema_pos_to_name.get(schema_file_id_to_pos.get(mod.file_id, -1), "") or ""
                 candidates = []
@@ -5466,7 +5510,7 @@ class CollectionDetailDialog(tk.Frame):
                 _phase_staging = self._game.get_effective_mod_staging_path()
                 _known_folders: list[str] = []
                 _seen_folders: set[str] = set()
-                for _fname in already_installed_by_fid.values():
+                for _fname in (*already_installed_by_ids.values(), *already_installed_by_fid.values()):
                     if _fname and _fname not in _seen_folders:
                         _seen_folders.add(_fname)
                         _known_folders.append(_fname)
