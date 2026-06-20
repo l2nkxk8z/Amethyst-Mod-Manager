@@ -6974,7 +6974,7 @@ class CollectionsDialog(tk.Frame):
         self._workshop_btn.pack(side="left", padx=4, pady=2)
 
         self._import_manifest_btn = ctk.CTkButton(
-            toolbar, text="Import Manifest", width=115, height=26,
+            toolbar, text="Import", width=90, height=26,
             fg_color=BTN_SUCCESS_DEEP, hover_color=BTN_SUCCESS_DEEP_HOV, text_color=TEXT_WHITE,
             font=FONT_HEADER, command=self._import_manifest,
         )
