@@ -567,6 +567,9 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
         self._filemap_pending: bool = False   # True while a background rebuild is running
         self._filemap_dirty:   bool = False   # True if another rebuild was requested while one was running
         self._filemap_after_id: str | None = None  # after() handle for debounce timer
+        # True if the user clicked "Generate Separators" while conflict data was
+        # still being (re)built; the generation runs once the rebuild lands.
+        self._pending_generate_separators: bool = False
         self._filemap_rescan_index: bool = False  # True if next rebuild should regenerate modindex.bin first
         self._redraw_after_id: str | None = None  # after_idle handle for scroll-debounce
         self._canvas_resize_after_id: str | None = None  # after() handle for resize-debounce
@@ -7847,7 +7850,39 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
         return result
 
     def _generate_separators(self) -> None:
+        """Button handler: ensure conflict data is fresh, then generate separators.
+
+        The partition into category separators vs. the "Conflicts" separator is
+        driven entirely by the conflict maps (``_overrides`` / ``_bsa_overrides``
+        / ``_conflict_map``). Those are populated by a *background* filemap
+        rebuild, so if we read them while a rebuild is pending — or before the
+        first one finishes — they can be empty and every conflicting mod gets
+        mis-sorted into a category group, flipping winners and breaking the load
+        order. This is reliably hit on slow filesystems (e.g. XFS) where the
+        scan takes long enough that the user clicks before it lands.
+
+        So: if a rebuild is in flight or queued, defer the actual generation
+        until the rebuild completes (see ``_done`` in ``_rebuild_filemap_now``).
+        Otherwise run immediately against the already-fresh data.
+        """
+        if self._modlist_path is None:
+            return
+        # A rebuild is running, or one is debounced/queued — wait for fresh
+        # conflict data rather than acting on a stale/empty map.
+        if (self._filemap_pending
+                or self._filemap_dirty
+                or self._filemap_after_id is not None):
+            self._pending_generate_separators = True
+            # Make sure a rebuild actually lands (if only a debounce timer is
+            # armed, _rebuild_filemap coalesces into the in-flight/queued run).
+            self._rebuild_filemap()
+            return
+        self._generate_separators_now()
+
+    def _generate_separators_now(self) -> None:
         """Create a separator for each category and move loose mods (not already inside a separator) into it.
+
+        Assumes conflict data is fresh — call via ``_generate_separators``.
 
         Rules:
         - Mods already inside a separator block are untouched.
@@ -8781,6 +8816,9 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
                 self._bsa_conflict_map = {}
                 self._bsa_overrides = {}
                 self._bsa_overridden_by = {}
+                # Conflict data is invalid — drop any deferred generation rather
+                # than firing it later against unrelated fresh data.
+                self._pending_generate_separators = False
                 self._log(f"Filemap error: {exc}")
             else:
                 self._conflict_map_base  = base_conflict_map
@@ -8808,6 +8846,13 @@ class ModListPanel(ModListFilterPanelMixin, ModListDownloadBarMixin,
             # If something changed while we were running, rebuild again.
             if self._filemap_dirty:
                 self._rebuild_filemap()
+            # A "Generate Separators" click that arrived mid-rebuild was deferred
+            # so it could act on fresh conflict data. Run it now that the maps
+            # are settled — but only on success (on error they were wiped) and
+            # only if no further rebuild is queued (otherwise wait for that one).
+            elif exc is None and self._pending_generate_separators:
+                self._pending_generate_separators = False
+                self._generate_separators_now()
 
         threading.Thread(target=_worker, daemon=True).start()
 
