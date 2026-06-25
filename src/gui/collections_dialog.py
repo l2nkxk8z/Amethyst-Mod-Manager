@@ -71,8 +71,13 @@ from LOOT.loot_sorter import sort_plugins as _loot_sort, is_available as _loot_a
 # Collections-specific card dimensions (5-column grid)
 _COLL_COLS  = 5
 _COLL_W     = 220  # 200 was too narrow at 1.25x–1.5x scale; extra width avoids clipping
-_COLL_IMG_W = 210
-_COLL_IMG_H = 240
+# Image width must leave room for the card's border (1px/side) plus the image
+# pad (_IMG_PAD/side) at EVERY scale, otherwise the image overflows the card
+# horizontally — and the overflow grows with ui_scale. Keep a generous design
+# margin: _COLL_W - _COLL_IMG_W = 20 > 2*(border+pad) = 2*(1+5) = 12.
+_COLL_IMG_W = 200
+_COLL_IMG_H = 228  # keep the original ~0.875 tile aspect ratio (200/228 ≈ 210/240)
+_IMG_PAD    = 5    # per-side padding around the tile image (design px)
 import gui.theme as _theme
 from gui.theme import (
     BG_DEEP,
@@ -700,15 +705,16 @@ class CollectionCard:
         self._coll_w = scaled(_COLL_W)
         self._coll_img_w = scaled(_COLL_IMG_W)
         self._coll_img_h = scaled(_COLL_IMG_H)
-        # Text area: name + stats + author only (summary moved to hover tooltip).
-        s = get_ui_scale()
-        text_h = max(60, int(110 * s))
-        # Include image pady so card height matches actual layout (image + pady + btn + text)
-        _img_pady = scaled(6) + scaled(3)
-        _btn_row_h = scaled(60)  # taller at high scale so View button is fully visible
-        self._coll_h = self._coll_img_h + _img_pady + _btn_row_h + text_h
 
-        # Outer card frame — fixed size, content clips if too long.
+        # Outer card frame.
+        #
+        # CTkFrame RE-APPLIES widget scaling to its width/height args, so they
+        # must be UNSCALED design values. The historic bug here was passing
+        # width=scaled(_COLL_W) (and height=scaled(...)), which CTk then scaled
+        # *again* — the frame grew by ui_scale² while the image grew by only
+        # ui_scale, leaving the image small with wide side margins and a big gap
+        # above the View button at every scale > 1x. Pass design px instead.
+        #
         # MUST be a CTkFrame (not plain tk.Frame): the card holds CTk children
         # (CTkLabel/CTkButton/CTkImage). When a plain tk.Frame parent is
         # destroyed, Tk tears down the subtree at the Tcl level but the nested
@@ -718,16 +724,41 @@ class CollectionCard:
         # CTkFrame parent cascades destroy() to its CTk descendants.
         self.card = ctk.CTkFrame(
             parent,
-            width=self._coll_w, height=self._coll_h,
+            width=_COLL_W,
             fg_color=BG_PANEL,
             border_color=BORDER,
             border_width=1,
             corner_radius=0,
         )
-        self.card.pack_propagate(False)
-        self.card.grid_propagate(False)
-
         self._build(on_view)
+        self._fit_height()
+
+    def _fit_height(self) -> None:
+        """Pin the card to its natural content height so there is never a dead
+        gap above the View button, at any ui_scale.
+
+        Strategy: keep grid propagation ON (so the frame's requested height is
+        the true stacked height of its rows), then freeze that exact height and
+        switch propagation OFF so the width stays pinned and the grid cell is
+        stable.
+        """
+        card = self.card
+        try:
+            card.update_idletasks()
+            req_h = card.winfo_reqheight()  # natural content height (real px)
+            # CTkFrame.configure(height=) re-applies widget scaling, so pass a
+            # design value (divide the measured real px back out). Width stays at
+            # the design _COLL_W the frame was created with.
+            scale = max(0.0001, get_ui_scale())
+            card.configure(width=_COLL_W, height=max(1, round(req_h / scale)))
+            card.grid_propagate(False)
+            card.pack_propagate(False)
+        except Exception:
+            # Fallback: a fixed propagation-off frame at the configured width.
+            try:
+                card.grid_propagate(False)
+            except Exception:
+                pass
 
     def _build(self, on_view: Callable):
         col = self._collection
@@ -737,72 +768,71 @@ class CollectionCard:
         placeholder = make_placeholder_image(_COLL_IMG_W, _COLL_IMG_H)
         ph_ctk = ctk.CTkImage(light_image=placeholder, dark_image=placeholder,
                                size=(_COLL_IMG_W, _COLL_IMG_H))
-        self._img_label = ctk.CTkLabel(
-            self.card, image=ph_ctk, text="",
-            width=_COLL_IMG_W, height=_COLL_IMG_H,
-        )
+        # No explicit width/height: let the label size to the (CTk-scaled) image,
+        # exactly like mod_card.ModCard. Passing width/height makes the label
+        # frame scale by widget-scaling while the image scales independently,
+        # leaving the image smaller than its slot at high ui_scale.
+        self._img_label = ctk.CTkLabel(self.card, image=ph_ctk, text="")
 
-        _btn_row_h = scaled(60)
-        text_h = self._coll_h - self._coll_img_h - scaled(6) - scaled(3) - _btn_row_h
-        text_frame = tk.Frame(self.card, bg=BG_PANEL, height=text_h)
-        text_frame.pack_propagate(False)
-
-        # CTkFrame (not tk.Frame): holds a CTkButton — see the card-frame note
-        # above. A plain-tk parent would strand the button in CTk's trackers.
-        btn_frame = ctk.CTkFrame(self.card, fg_color=BG_PANEL, height=_btn_row_h,
-                                 corner_radius=0)
-        btn_frame.pack_propagate(False)
-        # CTk scales widget width/height via set_widget_scaling(); use unscaled design
-        # values so CTk scales once to fit the card (avoid double-scaling overflow)
-        _btn_w = _COLL_W - 20
-        _btn_h = 28
-        ctk.CTkButton(
-            btn_frame, text="View",
-            width=_btn_w, height=_btn_h,
-            fg_color=ACCENT, hover_color=ACCENT_HOV,
-            text_color=TEXT_WHITE, font=FONT_SMALL,
-            command=on_view,
-        ).place(relx=0.5, rely=0.5, anchor="center")
-
-        # Use grid: row0=image (fixed), row2=btn (fixed), row1=text (flexible remainder).
-        # No minsize on row1 — it gets whatever is left so btn row never overflows the card.
-        self.card.grid_rowconfigure(0, minsize=self._coll_img_h + scaled(6) + scaled(3), weight=0)
-        self.card.grid_rowconfigure(1, weight=1)
-        self.card.grid_rowconfigure(2, minsize=_btn_row_h, weight=0)
-        pad = scaled(5)
-        self._img_label.grid(row=0, column=0, padx=pad, pady=(scaled(6), scaled(3)), sticky="n")
-        text_frame.grid(row=1, column=0, sticky="nsew")
-        btn_frame.grid(row=2, column=0, sticky="ew")
+        # Fixed-structure rows so every card has identical height and aligns in
+        # the grid (name is always 2 lines, author row always present):
+        #   row0  image
+        #   row1  name   (2 lines reserved)
+        #   row2  stats
+        #   row3  author (always rendered, empty if missing)
+        #   row4  View button
+        # _fit_height() then pins the measured height (same for every card).
         self.card.grid_columnconfigure(0, weight=1)
+        pad = scaled(_IMG_PAD)
+        self._img_label.grid(row=0, column=0, padx=pad, pady=(scaled(6), scaled(3)), sticky="ew")
 
         # Use tk.Label (not CTkLabel) so wraplength is in pixels with no CTk scaling
         _wrap = self._coll_w - scaled(16)
-        # Name
+        # Name — ALWAYS reserve 2 text lines (height=2) so 1-line and 2-line
+        # titles occupy identical vertical space and every card's stats/author/
+        # button rows line up across the grid (mirrors mod_card.ModCard).
         name_text = col.name or f"Collection {col.id}"
         tk.Label(
-            text_frame, text=name_text,
+            self.card, text=name_text,
             bg=BG_PANEL, fg=TEXT_MAIN,
             font=TK_FONT_BOLD,
-            wraplength=_wrap, justify="left", anchor="w",
-        ).pack(padx=scaled(8), fill="x")
+            wraplength=_wrap, justify="left", anchor="nw",
+            height=2,
+        ).grid(row=1, column=0, padx=scaled(8), pady=(0, scaled(1)), sticky="ew")
 
         # Stats: downloads, endorsements, mod count
         stats = f"↓{col.total_downloads:,}  {col.mod_count} mods"
         tk.Label(
-            text_frame, text=stats,
+            self.card, text=stats,
             bg=BG_PANEL, fg=TEXT_DIM,
             font=TK_FONT_SMALL,
             anchor="w", wraplength=_wrap,
-        ).pack(padx=scaled(8), fill="x")
+        ).grid(row=2, column=0, padx=scaled(8), sticky="ew")
 
-        # Author
-        if col.user_name:
-            tk.Label(
-                text_frame, text=f"by {col.user_name}",
-                bg=BG_PANEL, fg=TEXT_DIM,
-                font=TK_FONT_SMALL,
-                anchor="w", wraplength=_wrap,
-            ).pack(padx=scaled(8), fill="x")
+        # Author — always render the row (empty if missing) so cards with and
+        # without an author have identical height and stay aligned in the grid.
+        tk.Label(
+            self.card, text=(f"by {col.user_name}" if col.user_name else ""),
+            bg=BG_PANEL, fg=TEXT_DIM,
+            font=TK_FONT_SMALL,
+            anchor="w", wraplength=_wrap,
+        ).grid(row=3, column=0, padx=scaled(8), sticky="ew")
+
+        # CTkFrame (not tk.Frame): holds a CTkButton — see the card-frame note
+        # above. A plain-tk parent would strand the button in CTk's trackers.
+        btn_frame = ctk.CTkFrame(self.card, fg_color="transparent", corner_radius=0)
+        btn_frame.grid(row=4, column=0, padx=scaled(10), pady=(scaled(6), scaled(10)),
+                       sticky="ew")
+        btn_frame.grid_columnconfigure(0, weight=1)
+        # CTk scales widget width/height via set_widget_scaling(); use unscaled
+        # design height so CTk scales once (avoid double-scaling overflow).
+        ctk.CTkButton(
+            btn_frame, text="View",
+            height=30,
+            fg_color=ACCENT, hover_color=ACCENT_HOV,
+            text_color=TEXT_WHITE, font=FONT_SMALL,
+            command=on_view,
+        ).grid(row=0, column=0, sticky="ew")
 
         # Summary shown as a hover tooltip on the card instead of inline text.
         summary = (col.summary or "").strip()
@@ -828,9 +858,12 @@ class CollectionCard:
                 from io import BytesIO
                 raw = Image.open(BytesIO(r.content)).convert("RGBA")
                 # Scale to cover the slot (zoom), then center-crop.
-                # Use unscaled design dims — CTk applies set_widget_scaling internally.
+                # PIL works in real pixels, so crop at the SCALED slot size for a
+                # sharp tile at high ui_scale (matches mod_card.py). CTkImage then
+                # gets the UNSCALED design size — CTk multiplies it by widget
+                # scaling itself, so the bitmap and displayed size line up.
                 src_w, src_h = raw.size
-                iw, ih = _COLL_IMG_W, _COLL_IMG_H
+                iw, ih = scaled(_COLL_IMG_W), scaled(_COLL_IMG_H)
                 scale = max(iw / src_w, ih / src_h)
                 new_w = int(src_w * scale)
                 new_h = int(src_h * scale)
@@ -839,7 +872,7 @@ class CollectionCard:
                 y_off = (new_h - ih) // 2
                 bg = raw.crop((x_off, y_off, x_off + iw, y_off + ih))
                 photo = ctk.CTkImage(light_image=bg, dark_image=bg,
-                                     size=(iw, ih))
+                                     size=(_COLL_IMG_W, _COLL_IMG_H))
                 cache[url] = photo
 
                 def _done():
