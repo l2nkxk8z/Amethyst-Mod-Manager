@@ -350,6 +350,11 @@ class DownloadsPanel:
         # last plainly-clicked row. Keyed by Path so it survives rescans /
         # scroll; resolved back to a visible index at shift-click time.
         self._range_anchor: Optional[Path] = None
+        # Whether the last plain click selected (True) or deselected (False)
+        # the anchor row. A following shift-click applies the same action to
+        # the whole range, so shift-click can extend either a selection or a
+        # deselection.
+        self._range_select: bool = True
 
         # Filter side panel state
         self._filter_panel_open: bool = False
@@ -1875,17 +1880,21 @@ class DownloadsPanel:
             return
         fpath = entry.path
 
-        # Shift-click — select every archive between the anchor (last
-        # plainly-clicked row) and this row inclusive. Section headers
-        # inside the range are skipped. Falls back to a plain toggle when
-        # there is no resolvable anchor.
+        # Shift-click — apply the anchor's last action (select or deselect)
+        # to every archive between the anchor row and this row inclusive.
+        # Section headers inside the range are skipped. Falls back to a
+        # plain toggle when there is no resolvable anchor.
         if (event.state & 0x0001) and self._range_anchor is not None:
             anchor_idx = self._visible_index_of(self._range_anchor)
             if anchor_idx is not None:
                 lo, hi = sorted((anchor_idx, idx))
                 for e in self._visible_files[lo:hi + 1]:
-                    if not e.is_section_header and e.path is not None:
+                    if e.is_section_header or e.path is None:
+                        continue
+                    if self._range_select:
                         self._checked.add(e.path)
+                    else:
+                        self._checked.discard(e.path)
                 # Leave the anchor unchanged so the user can extend the
                 # range from the same origin with another shift-click.
                 self._redraw()
@@ -1898,8 +1907,10 @@ class DownloadsPanel:
 
         if fpath in self._checked:
             self._checked.discard(fpath)
+            self._range_select = False
         else:
             self._checked.add(fpath)
+            self._range_select = True
         self._range_anchor = fpath
         self._redraw()
         if self._checked_change_cb is not None:
