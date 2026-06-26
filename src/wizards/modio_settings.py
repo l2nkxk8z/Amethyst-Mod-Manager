@@ -15,10 +15,9 @@ from __future__ import annotations
 import importlib.util
 import sys
 import threading
-import webbrowser
 from pathlib import Path
 from typing import TYPE_CHECKING
-
+from Utils.xdg import open_url
 import customtkinter as ctk
 
 if TYPE_CHECKING:
@@ -91,7 +90,7 @@ class ModioSettingsWizard(ctk.CTkFrame):
         ctk.CTkButton(
             body, text="Get my API key (mod.io)", width=200, height=30,
             font=FONT_SMALL, fg_color=BG_PANEL, hover_color=BG_HEADER,
-            text_color=TEXT_MAIN, command=lambda: webbrowser.open(_KEY_URL),
+            text_color=TEXT_MAIN, command=lambda: open_url(_KEY_URL),
         ).pack(pady=(0, 12))
 
         self._entry = ctk.CTkEntry(
