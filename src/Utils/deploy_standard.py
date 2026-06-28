@@ -15,7 +15,7 @@ import shutil
 import time as _time
 from pathlib import Path
 
-from Utils.app_log import safe_log as _safe_log
+from Utils.app_log import safe_log as _safe_log, app_log as _app_log
 from Utils.atomic_write import atomic_writer
 from Utils.path_utils import has_path_traversal as _has_traversal
 from Utils.deploy_shared import (
@@ -245,8 +245,8 @@ def _tag_mod_xedit_modified(mod_dir: Path, plugin_name: str) -> None:
     try:
         with open(meta, "w", encoding="utf-8") as fh:
             cp.write(fh)
-    except Exception:
-        pass
+    except Exception as exc:
+        _app_log(f"  WARN: could not tag xEdit-modified plugin in {meta}: {exc}")
 
 
 def _tree_has_files(root: Path) -> bool:
@@ -1160,8 +1160,8 @@ def restore_data_core(
                     for rel_key in _normal.keys():
                         modindex_lower.add(rel_key)
                         modindex_rel_to_mods.setdefault(rel_key, []).append(_mod_name)
-        except Exception:
-            pass
+        except Exception as exc:
+            _log(f"  WARN: could not read mod index for rescue check — {exc}")
         # Vanilla files deployed as symlinks into core_dir.  If such a file was
         # edited in place by an external tool (xEdit), the tool may have
         # destroyed core_dir's copy via the symlink, so it won't be in

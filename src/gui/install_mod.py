@@ -2221,8 +2221,8 @@ def install_mod_from_archive(archive_path: str, parent_window, log_fn,
                     prebuilt_meta.installation_file = os.path.basename(archive_path)
                     write_meta(meta_path, prebuilt_meta)
                     log_fn(f"Nexus: Saved metadata for '{mod_name}' (mod {prebuilt_meta.mod_id})")
-                except OSError:
-                    pass
+                except OSError as exc:
+                    log_fn(f"Nexus: WARN — could not save metadata for '{mod_name}': {exc}")
             elif _game_domain and _archive.is_file():
                 def _detect_bundle_meta(_mp=meta_path, _mn=mod_name):
                     try:
@@ -2716,8 +2716,8 @@ def install_mod_from_archive(archive_path: str, parent_window, log_fn,
                 write_meta(meta_path, prebuilt_meta)
                 log_fn(f"Nexus: Saved metadata for '{mod_name}' "
                        f"(mod {prebuilt_meta.mod_id})")
-            except OSError:
-                pass
+            except OSError as exc:
+                log_fn(f"Nexus: WARN — could not save metadata for '{mod_name}': {exc}")
         elif _game_domain and _archive.is_file():
             def _detect_meta():
                 try:
