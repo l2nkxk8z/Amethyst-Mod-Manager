@@ -92,16 +92,15 @@ class MainWindow(QMainWindow):
         )
         print("[gui_qt] glue wired:", ", ".join(wired))
 
-        # Defer until the layout has real widths: pick the action-button mode
-        # and start with the log collapsed.
+        # Start with the log collapsed (deferred until the layout has real size).
         from PySide6.QtCore import QTimer
-        QTimer.singleShot(0, self._init_action_mode)
         QTimer.singleShot(0, lambda: (self._vsplit.setSizes(
             [self._vsplit.height(), 0]), self._sync_log_controls()))
 
         # Populate selectors from discovered games and load the active modlist.
         self._populate_selectors()
         self._reload_modlist()
+        self._reload_plugins()
 
     def _populate_selectors(self):
         """Fill the game/profile selectors from the current GameState."""
@@ -116,24 +115,27 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------- header row
     def _build_header_row(self) -> QWidget:
-        """Top bar | play bar, fixed split (top bar takes the slack)."""
-        row = QWidget()
-        h = QHBoxLayout(row)
-        h.setContentsMargins(0, 0, 0, 0)
-        h.setSpacing(0)
-        top = self._left_header()
-        play = self._play_bar()
-        play.setFixedWidth(self._PLAY_BAR_W)
-        self._play_bar_widget = play
-        h.addWidget(top, 1)
-        h.addWidget(play, 0)
-        return row
+        """Full-width top bar (selectors + action buttons) — spans the whole
+        window so the buttons have room. The Play section now lives above the
+        plugins panel (see _build_body_row), not here."""
+        return self._left_header()
 
     # ---------------------------------------------------------- body row
     def _build_body_row(self) -> QWidget:
+        # Left: modlist. Right: a column with the Play bar on top + plugins
+        # below. Splitter sits between modlist and the right column.
+        right_col = QWidget()
+        rc = QVBoxLayout(right_col)
+        rc.setContentsMargins(0, 0, 0, 0)
+        rc.setSpacing(0)
+        play = self._play_bar()
+        self._play_bar_widget = play
+        rc.addWidget(play)
+        rc.addWidget(self._build_plugins(), 1)
+
         split = QSplitter(Qt.Horizontal)
         split.addWidget(self._build_modlist())
-        split.addWidget(self._build_plugins())
+        split.addWidget(right_col)
         split.setStretchFactor(0, 5)
         split.setStretchFactor(1, 4)
         split.setSizes([620, 480])
@@ -276,42 +278,9 @@ class MainWindow(QMainWindow):
         self._left_header_widget = header
         return header
 
-    # ---- responsive header: icon-only action buttons when narrow ----------
-    # Two thresholds (a dead-band) instead of one prevent flicker at the
-    # boundary. Measured against window width (stable, not the button-affected
-    # header width). Deck width 1280 < COLLAPSE_W → icon-only there.
-    _COLLAPSE_W = 1450     # below → icon-only actions
-    _EXPAND_W = 1600       # above → text+icon actions
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._update_action_button_mode()
-
-    def _init_action_mode(self):
-        if getattr(self, "_action_buttons", None):
-            mid = (self._COLLAPSE_W + self._EXPAND_W) // 2
-            self._set_action_mode(self.width() < mid)
-
-    def _update_action_button_mode(self):
-        btns = getattr(self, "_action_buttons", None)
-        if not btns:
-            return
-        w = self.width()
-        icon_now = btns[0].toolButtonStyle() == Qt.ToolButtonIconOnly
-        if icon_now and w >= self._EXPAND_W:
-            self._set_action_mode(False)   # expand to text
-        elif not icon_now and w <= self._COLLAPSE_W:
-            self._set_action_mode(True)    # collapse to icon-only
-
-    def _set_action_mode(self, icon_only: bool):
-        style = Qt.ToolButtonIconOnly if icon_only else Qt.ToolButtonTextBesideIcon
-        for b in self._action_buttons:
-            b.setToolButtonStyle(style)
-            if icon_only:
-                b.setFixedWidth(self._BTN_H + 6)
-            else:
-                b.setMinimumWidth(0)
-                b.setMaximumWidth(16777215)
+    # The action buttons always show text+icon: the full-width top bar has room
+    # for them even at the 1280 minimum, so the old icon-only collapse (with its
+    # threshold/flicker tuning) is no longer needed.
 
     # ---- selector handlers -------------------------------------------------
     def _on_game_changed(self, name):
@@ -325,6 +294,7 @@ class MainWindow(QMainWindow):
         self._game_selector.set_current(name)
         self._play_game_selector.set_current(name)
         self._reload_modlist()
+        self._reload_plugins()
 
     def _on_profile_changed(self, name):
         if name == self._gs.profile:
@@ -332,6 +302,7 @@ class MainWindow(QMainWindow):
         self._gs.set_profile(name)
         self._profile_selector.set_current(name)
         self._reload_modlist()
+        self._reload_plugins()
 
     def _on_game_action(self, which):
         if which == "add":
@@ -390,6 +361,15 @@ class MainWindow(QMainWindow):
         if entries:
             self._rebuild_conflicts_async()
 
+    def _reload_plugins(self):
+        """Load the active game/profile's plugins into the Plugins tab."""
+        from gui_qt.plugin_state import load_plugins
+        rows = load_plugins(self._gs.game, self._gs.profile)
+        self._plugin_model.set_rows(rows, game=self._gs.game,
+                                    profile=self._gs.profile,
+                                    profile_dir=self._gs.profile_dir())
+        print(f"[gui_qt] plugins: {len(rows)} entries")
+
     def _rebuild_conflicts_async(self):
         """Build the filemap off-thread; the worker emits _conflicts_ready
         (queued → UI thread). A generation counter drops results from a
@@ -421,8 +401,12 @@ class MainWindow(QMainWindow):
         h.setContentsMargins(8, 6, 8, 6)
         h.setSpacing(6)
 
-        # Game context — same SelectorButton style as the top-bar dropdowns.
-        # Sizes to its content (no fixed min) so longer game names don't squash.
+        # All Play-section controls are anchored to the RIGHT: the stretch sits
+        # FIRST, so extra width from resizing the plugins panel opens up on the
+        # left and the controls stay locked together at the right edge.
+        h.addStretch(1)
+
+        # Game context (fixed-size).
         self._play_game_selector = SelectorButton(
             items=["Stardew Valley"],
             current="Stardew Valley",
@@ -430,9 +414,9 @@ class MainWindow(QMainWindow):
             on_select=self._on_game_changed,
         )
         self._play_game_selector.setFixedHeight(self._BTN_H)
-        h.addWidget(self._play_game_selector, 1)   # gets the slack, can grow
+        h.addWidget(self._play_game_selector)
 
-        # ▶ Play — plain button (no dropdown).
+        # ▶ Play — plain fixed-size button (no dropdown).
         play = QPushButton("▶  Play")
         play.setObjectName("PlayButton")
         play.setFixedHeight(self._BTN_H)
@@ -459,28 +443,55 @@ class MainWindow(QMainWindow):
         return bar
 
     def _plugins_placeholder(self) -> QWidget:
+        from PySide6.QtWidgets import QStackedWidget
+        from gui_qt.plugin_model import PluginModel
+        from gui_qt.plugin_view import PluginView
+
         frame = QFrame()
         frame.setObjectName("PlaceholderPane")
         v = QVBoxLayout(frame)
         v.setContentsMargins(8, 6, 8, 6)
+        v.setSpacing(6)
 
-        # Tab strip stub (Plugins / Mod Files / Text Files / Data / Downloads).
+        # Sub-tab strip — switches the stacked pages below.
+        self._plugin_tab_names = ["Plugins", "Mod Files", "Text Files",
+                                  "Data", "Downloads"]
+        self._plugin_stack = QStackedWidget()
+
+        # Page 0: the real Plugins view.
+        self._plugin_model = PluginModel()
+        self._plugin_view = PluginView(self._plugin_model)
+        self._plugin_stack.addWidget(self._plugin_view)
+        # Other pages: placeholders for now.
+        for t in self._plugin_tab_names[1:]:
+            ph = QLabel(f"{t}\n(coming in a later phase)")
+            ph.setAlignment(Qt.AlignCenter)
+            ph.setStyleSheet(f"color:{_c(self._pal,'TEXT_FAINT')};")
+            self._plugin_stack.addWidget(ph)
+
         tabs = QHBoxLayout()
-        for i, t in enumerate(["Plugins", "Mod Files", "Text Files",
-                               "Data", "Downloads"]):
+        tabs.setSpacing(2)
+        self._plugin_tab_labels = []
+        for i, t in enumerate(self._plugin_tab_names):
             lbl = QLabel(t)
-            lbl.setStyleSheet(
-                "padding:4px 8px;"
-                + ("color:#fff; border-bottom:2px solid "
-                   f"{_c(self._pal,'ACCENT')};" if i == 0 else "color:#888;"))
+            lbl.setCursor(Qt.PointingHandCursor)
+            lbl.mousePressEvent = lambda _e, idx=i: self._select_plugin_tab(idx)
             tabs.addWidget(lbl)
+            self._plugin_tab_labels.append(lbl)
         tabs.addStretch(1)
         v.addLayout(tabs)
-
-        msg = QLabel("Plugins panel\n(coming in a later phase)")
-        msg.setAlignment(Qt.AlignCenter)
-        v.addWidget(msg, 1)
+        v.addWidget(self._plugin_stack, 1)
+        self._select_plugin_tab(0)
         return frame
+
+    def _select_plugin_tab(self, idx: int):
+        self._plugin_stack.setCurrentIndex(idx)
+        for i, lbl in enumerate(self._plugin_tab_labels):
+            sel = i == idx
+            lbl.setStyleSheet(
+                "padding:4px 8px;" + (
+                    f"color:#fff; border-bottom:2px solid {_c(self._pal,'ACCENT')};"
+                    if sel else f"color:{_c(self._pal,'TEXT_DIM')};"))
 
     # --------------------------------------------------------------- widgets
     def _action_button(self, text: str, icon_name: str,
