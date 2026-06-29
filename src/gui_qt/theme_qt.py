@@ -97,6 +97,24 @@ def build_qss(pal: dict | None = None) -> str:
         border-bottom: 1px solid {c('BORDER')};
     }}
 
+    /* Detachable tabs (overlay replacement) */
+    QTabWidget::pane {{ border: none; }}
+    QTabBar {{ background: {c('BG_HEADER')}; }}
+    QTabBar::tab {{
+        background: {c('BG_PANEL')};
+        color: {c('TEXT_DIM')};
+        padding: 6px 14px;
+        border: 1px solid {c('BORDER')};
+        border-bottom: none;
+        margin-right: 2px;
+    }}
+    QTabBar::tab:selected {{
+        background: {c('BG_DEEP')};
+        color: {c('TEXT_MAIN')};
+    }}
+    QTabBar::tab:hover {{ color: {c('TEXT_MAIN')}; }}
+    QTabBar::close-button {{ subcontrol-position: right; }}
+
     /* Slim modern scrollbars — applied globally (modlist, plugins, log, …) */
     QScrollBar:vertical {{
         background: transparent;

@@ -22,6 +22,7 @@ from gui_qt.modlist_model import ModListModel
 from gui_qt.modlist_view import ModListView
 from gui_qt.selector_button import SelectorButton
 from gui_qt.game_state import GameState
+from gui_qt.detachable_tabs import DetachableTabWidget
 from gui_qt import glue
 
 
@@ -58,13 +59,18 @@ class MainWindow(QMainWindow):
         mc.addWidget(self._build_body_row(), 1)
         mc.addWidget(self._build_footer_row())
 
+        # The main content is the permanent first tab; overlay-style views (Add
+        # Game, Nexus browser, …) open as further tabs that can be detached.
+        self._tabs = DetachableTabWidget()
+        self._tabs.add_permanent(main_content, "Mods")
+
         self._log_view = QPlainTextEdit()
         self._log_view.setReadOnly(True)
         self._log_view.setObjectName("LogView")
         self._log_view.setMinimumHeight(0)   # can collapse fully
 
         self._vsplit = QSplitter(Qt.Vertical)
-        self._vsplit.addWidget(main_content)
+        self._vsplit.addWidget(self._tabs)
         self._vsplit.addWidget(self._log_view)
         self._vsplit.setStretchFactor(0, 1)
         self._vsplit.setStretchFactor(1, 0)
@@ -328,7 +334,21 @@ class MainWindow(QMainWindow):
         self._reload_modlist()
 
     def _on_game_action(self, which):
-        self._append_log(f"[game] {which} (not wired yet)")
+        if which == "add":
+            self._open_add_game_tab()
+        else:
+            self._append_log(f"[game] {which} (not wired yet)")
+
+    def _open_add_game_tab(self):
+        """Open the Add Game view as a (detachable) tab. Placeholder content for
+        now — the real picker fills it in later."""
+        page = QWidget()
+        v = QVBoxLayout(page)
+        lbl = QLabel("Add Game\n(picker coming soon)")
+        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setStyleSheet(f"color:{_c(self._pal,'TEXT_FAINT')}; font-size:16px;")
+        v.addWidget(lbl)
+        self._tabs.open_tab(page, "Add game", key="add_game")
 
     def _on_profile_action(self, which):
         self._append_log(f"[profile] {which} (not wired yet)")
