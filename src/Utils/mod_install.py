@@ -328,7 +328,7 @@ class PreparedInstall:
     caller should run the wizard; otherwise it's a plain install."""
     def __init__(self, archive: Path, game, profile_dir: Path, mod_name: str,
                  extract_dir: Path, src_root: Path,
-                 fomod_base: Path | None, fomod_config):
+                 fomod_base: Path | None, fomod_config, prebuilt_meta=None):
         self.archive = archive
         self.game = game
         self.profile_dir = profile_dir
@@ -337,6 +337,10 @@ class PreparedInstall:
         self.src_root = src_root
         self.fomod_base = fomod_base
         self.fomod_config = fomod_config
+        # Optional NexusModMeta supplied by the caller (e.g. the Nexus browser,
+        # which knows the real mod_id/file_id) — written verbatim instead of
+        # parsing the (sometimes wrong) archive filename.
+        self.prebuilt_meta = prebuilt_meta
 
     def is_fomod(self) -> bool:
         return self.fomod_base is not None and self.fomod_config is not None
@@ -347,7 +351,8 @@ class PreparedInstall:
 
 def prepare_archive(archive_path: str, game, profile_dir: Path, *,
                     log_fn: LogFn, progress_fn: Optional[ProgressFn] = None,
-                    preferred_name: str = "") -> PreparedInstall | None:
+                    preferred_name: str = "", prebuilt_meta=None
+                    ) -> PreparedInstall | None:
     """Extract *archive_path* to a kept temp dir and detect FOMOD. The caller
     either runs the wizard (is_fomod) then `finish_install(prepared, selections)`,
     or just calls `finish_install(prepared, None)` for a plain/default install.
@@ -388,7 +393,8 @@ def prepare_archive(archive_path: str, game, profile_dir: Path, *,
             log_fn(f"FOMOD parse failed ({exc}); will install verbatim.")
             fomod_base = None
     return PreparedInstall(archive, game, profile_dir, mod_name,
-                           extract_dir, src_root, fomod_base, config)
+                           extract_dir, src_root, fomod_base, config,
+                           prebuilt_meta=prebuilt_meta)
 
 
 def finish_install(prepared: "PreparedInstall", fomod_selections, *,
@@ -432,7 +438,8 @@ def finish_install(prepared: "PreparedInstall", fomod_selections, *,
             pass
         return None
 
-    _write_install_meta(dest_root, p.archive, p.game, log_fn)
+    _write_install_meta(dest_root, p.archive, p.game, log_fn,
+                        prebuilt_meta=getattr(p, "prebuilt_meta", None))
     _pp(0, 0, "Indexing")
     _update_indexes(p.game, p.profile_dir, p.mod_name, dest_root, log_fn)
     _add_to_modlist(p.profile_dir, p.mod_name, log_fn)
@@ -526,7 +533,8 @@ def _install_fomod(fomod_base: Path, config, dest_root: Path,
     return any(dest_root.iterdir())
 
 
-def _write_install_meta(dest_root: Path, archive: Path, game, log_fn: LogFn) -> None:
+def _write_install_meta(dest_root: Path, archive: Path, game, log_fn: LogFn,
+                        prebuilt_meta=None) -> None:
     try:
         from Nexus.nexus_meta import (
             write_meta, resolve_nexus_meta_for_archive, NexusModMeta)
@@ -534,10 +542,16 @@ def _write_install_meta(dest_root: Path, archive: Path, game, log_fn: LogFn) -> 
         meta_path = dest_root / "meta.ini"
         meta = None
         domain = getattr(game, "nexus_game_domain", None) or getattr(game, "game_id", "")
-        try:
-            meta = resolve_nexus_meta_for_archive(archive, domain, log_fn=log_fn)
-        except Exception:
-            meta = None
+        if prebuilt_meta is not None:
+            # The caller (Nexus browser) knows the real mod_id/file_id — use it
+            # verbatim instead of parsing the archive filename, which can be
+            # wrong for mods whose name/version embeds digits.
+            meta = prebuilt_meta
+        else:
+            try:
+                meta = resolve_nexus_meta_for_archive(archive, domain, log_fn=log_fn)
+            except Exception:
+                meta = None
         if meta is None:
             meta = NexusModMeta()
         # Always stamp the local install fields.

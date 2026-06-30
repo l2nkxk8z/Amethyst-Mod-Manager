@@ -136,6 +136,9 @@ class NexusModInfo:
     status: str = ""
     uploaded_by: str = ""
     category_name: str = ""
+    created_at: str = ""        # ISO-8601 string (GraphQL createdAt), "" if absent
+    updated_at: str = ""        # ISO-8601 string (GraphQL updatedAt), "" if absent
+    file_size_kb: int = 0       # primary file size in KB (GraphQL fileSize), 0 if absent
 
 
 @dataclass
@@ -866,6 +869,11 @@ class NexusAPI:
                     endorsements
                     downloads
                     pictureUrl
+                    adultContent
+                    createdAt
+                    updatedAt
+                    fileSize
+                    modCategory { name }
                 }
             }
         }
@@ -908,6 +916,11 @@ class NexusAPI:
                     endorsement_count=n.get("endorsements", 0) or 0,
                     downloads_total=n.get("downloads", 0) or 0,
                     picture_url=n.get("pictureUrl", "") or "",
+                    contains_adult_content=bool(n.get("adultContent", False)),
+                    created_at=n.get("createdAt", "") or "",
+                    updated_at=n.get("updatedAt", "") or "",
+                    file_size_kb=n.get("fileSize", 0) or 0,
+                    category_name=(n.get("modCategory") or {}).get("name", "") or "",
                 ))
             return results
         except NexusAPIError:
@@ -1816,6 +1829,10 @@ class NexusAPI:
                     downloads
                     pictureUrl
                     adultContent
+                    createdAt
+                    updatedAt
+                    fileSize
+                    modCategory {{ name }}
                 }}
             }}
         }}
@@ -1860,6 +1877,10 @@ class NexusAPI:
                     downloads_total=n.get("downloads", 0) or 0,
                     picture_url=n.get("pictureUrl", "") or "",
                     contains_adult_content=bool(n.get("adultContent", False)),
+                    created_at=n.get("createdAt", "") or "",
+                    updated_at=n.get("updatedAt", "") or "",
+                    file_size_kb=n.get("fileSize", 0) or 0,
+                    category_name=(n.get("modCategory") or {}).get("name", "") or "",
                 ))
             return results
         except NexusAPIError:
@@ -1909,6 +1930,10 @@ class NexusAPI:
                     downloads
                     pictureUrl
                     adultContent
+                    createdAt
+                    updatedAt
+                    fileSize
+                    modCategory { name }
                 }
             }
         }
@@ -1952,6 +1977,10 @@ class NexusAPI:
                     downloads_total=n.get("downloads", 0) or 0,
                     picture_url=n.get("pictureUrl", "") or "",
                     contains_adult_content=bool(n.get("adultContent", False)),
+                    created_at=n.get("createdAt", "") or "",
+                    updated_at=n.get("updatedAt", "") or "",
+                    file_size_kb=n.get("fileSize", 0) or 0,
+                    category_name=(n.get("modCategory") or {}).get("name", "") or "",
                 ))
             return results
         except NexusAPIError:

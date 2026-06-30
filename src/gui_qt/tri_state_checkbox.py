@@ -40,10 +40,14 @@ class TriStateCheckBox(QAbstractButton):
     stateChanged = Signal(int)
 
     def __init__(self, text: str = "", parent=None, *,
-                 include_color: str | None = None):
+                 include_color: str | None = None, two_state: bool = False):
         super().__init__(parent)
         self._state = STATE_OFF
         self._include = include_color or _INCLUDE
+        # two_state: cycle off <-> include only (no exclude). Used where a plain
+        # on/off check is wanted but the row must look identical to the tri-state
+        # filter rows (e.g. the Nexus categories panel).
+        self._modulo = 2 if two_state else 3
         self.setText(text)
         self.setCheckable(False)          # we manage our own tri-state
         self.setCursor(Qt.PointingHandCursor)
@@ -55,7 +59,7 @@ class TriStateCheckBox(QAbstractButton):
         return self._state
 
     def set_state(self, state: int, *, emit: bool = False) -> None:
-        state = int(state) % 3
+        state = int(state) % self._modulo
         if state == self._state:
             return
         self._state = state
@@ -64,7 +68,7 @@ class TriStateCheckBox(QAbstractButton):
             self.stateChanged.emit(state)
 
     def _cycle(self) -> None:
-        self._state = (self._state + 1) % 3
+        self._state = (self._state + 1) % self._modulo
         self.update()
         self.stateChanged.emit(self._state)
 

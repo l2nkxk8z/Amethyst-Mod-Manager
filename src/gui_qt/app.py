@@ -818,7 +818,7 @@ class MainWindow(QMainWindow):
                 ("Tool wizards…", None),
             ]),
             ("Nexus", "nexus.png", [
-                ("Open Nexus Mods", None),
+                ("Open Nexus Mods", self._open_nexus_browser_tab),
                 ("Collections…", None),
                 ("Check for updates", None),
             ]),
@@ -903,6 +903,42 @@ class MainWindow(QMainWindow):
                            on_select=self._on_add_game_select,
                            on_add=self._on_add_game_add)
         self._tabs.open_tab(page, "Add game", key="add_game")
+
+    def _open_nexus_browser_tab(self):
+        """Open the Nexus Mods browser as a detachable tab. Needs a configured
+        game with a Nexus domain and existing OAuth tokens (login UI deferred)."""
+        if self._tabs.has_key("nexus_browser"):
+            self._tabs.focus_key("nexus_browser")
+            return
+        game = self._gs.game
+        if game is None or not game.is_configured():
+            self._notify("No configured game selected.", "warning")
+            return
+        domain = getattr(game, "nexus_game_domain", "") or ""
+        if not domain:
+            self._notify(f"'{game.name}' has no Nexus Mods page.", "warning")
+            return
+        from Nexus.nexus_oauth import load_oauth_tokens
+        from Nexus.nexus_api import NexusAPI
+        tokens = load_oauth_tokens()
+        if tokens is None:
+            self._notify("Log in to Nexus first (Nexus settings).", "warning")
+            self._append_log("[nexus] no OAuth tokens — login required")
+            return
+        try:
+            api = NexusAPI.from_oauth(tokens)
+        except Exception as exc:
+            self._notify("Could not connect to Nexus.", "error")
+            self._append_log(f"[nexus] api error: {exc}")
+            return
+        from gui_qt.nexus_browser_view import NexusBrowserView
+        view = NexusBrowserView(api, domain, game,
+                                install_fn=self._install_paths,
+                                log_fn=self._append_log)
+        self._nexus_view = view
+        # Drop the reference when the tab/window is gone so we stop refreshing it.
+        view.destroyed.connect(lambda *_: setattr(self, "_nexus_view", None))
+        self._tabs.open_tab(view, "Nexus", key="nexus_browser")
 
     def _on_add_game_select(self, name: str):
         """A configured game was picked in the Add-Game view → switch to it and
@@ -1240,9 +1276,11 @@ class MainWindow(QMainWindow):
         else:
             self._notify(f"{title} — failed (see log).", "error")
 
-    def _install_paths(self, paths: list[str]):
+    def _install_paths(self, paths: list[str], metas: dict | None = None):
         """Queue + install a list of archive paths (shared by the Install Mod
-        button and the Downloads tab). FOMODs pause for the wizard mid-queue."""
+        button and the Downloads tab). FOMODs pause for the wizard mid-queue.
+        *metas* optionally maps an archive path → a prebuilt NexusModMeta (the
+        Nexus browser supplies the real mod_id/file_id so meta.ini is correct)."""
         if not paths:
             return
         game = self._gs.game
@@ -1268,6 +1306,7 @@ class MainWindow(QMainWindow):
         self._install_ok = []
         self._install_game = game
         self._install_profile_dir = profile_dir
+        self._install_metas = dict(metas or {})
         self._notify(f"Installing {len(paths)} mod(s)…" if len(paths) > 1
                      else f"Installing {Path(paths[0]).name}…", "info")
         self._install_next()
@@ -1285,13 +1324,16 @@ class MainWindow(QMainWindow):
 
         import threading
 
+        meta = getattr(self, "_install_metas", {}).get(path)
+
         def worker():
             from Utils.mod_install import prepare_archive
             try:
                 prepared = prepare_archive(
                     path, self._install_game, self._install_profile_dir,
                     log_fn=lambda m: self._op_log.emit(str(m)),
-                    progress_fn=lambda d, t, ph=None: self._op_progress.emit(d, t, ph))
+                    progress_fn=lambda d, t, ph=None: self._op_progress.emit(d, t, ph),
+                    prebuilt_meta=meta)
             except Exception as exc:
                 self._op_log.emit(f"Prepare error ({Path(path).name}): {exc}")
                 prepared = None
@@ -1948,6 +1990,13 @@ class MainWindow(QMainWindow):
             self._downloads_view.mark_dirty()
         if hasattr(self, "_text_files_view"):
             self._text_files_view.mark_dirty()
+        # The Nexus browser (if open) shows Install/Reinstall per the active
+        # profile's installed mods — refresh on every modlist reload (covers
+        # profile/game change AND post-install).
+        nv = getattr(self, "_nexus_view", None)
+        if nv is not None:
+            nv._game = self._gs.game
+            nv.refresh_installed()
 
         if entries:
             self._rebuild_conflicts_async(rescan_index=rescan_index)
@@ -2011,6 +2060,12 @@ class MainWindow(QMainWindow):
         # The deployed file set changed → the Text Files list is stale.
         if hasattr(self, "_text_files_view"):
             self._text_files_view.mark_dirty()
+        # A mod may have been removed/added → re-evaluate the Nexus browser's
+        # Install/Reinstall buttons (remove goes through save()→conflict rebuild,
+        # which is the only signal the Nexus tab gets for a removal).
+        nv = getattr(self, "_nexus_view", None)
+        if nv is not None:
+            nv.refresh_installed()
 
     # ----------------------------------------------------------------- right
     def _build_plugins(self) -> QWidget:
