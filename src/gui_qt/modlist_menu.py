@@ -9,10 +9,12 @@ Qt backend, and even those appear only when their Tk show-condition passes.
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QMenu, QInputDialog
+from PySide6.QtWidgets import QMenu
 from PySide6.QtGui import QAction
 
+from gui_qt.confirm_overlay import ConfirmOverlay
 from gui_qt.modlist_model import COL_NAME
+from gui_qt.text_input_overlay import TextInputOverlay
 
 
 def show_context_menu(view, global_pos, index):
@@ -806,38 +808,41 @@ def _sort_selected_alphabetically(view, model, mod_rows):
 def _create_empty_mod(view, model, row):
     """Prompt for a name, create an empty staging folder + minimal meta.ini, and
     insert a new mod row just below *row*. Port of Tk _create_empty_mod."""
-    from PySide6.QtWidgets import QMessageBox
     staging = getattr(view, "staging_dir", None)
     if staging is None:
         return
-    name, ok = QInputDialog.getText(view, "Create empty mod", "Mod name:")
-    if not ok:
-        return
-    name = name.strip()
-    if not name:
-        return
-    # Name-collision guard (mods + separators, by display name).
-    existing = set()
-    for r in range(model.rowCount()):
-        e = model.entry(r)
-        existing.add(e.name)
-        existing.add(e.display_name)
-    if name in existing:
-        QMessageBox.warning(view, "Name conflict",
-                            f"A mod or separator named '{name}' already exists.")
-        return
-    try:
-        from datetime import datetime
-        mod_dir = staging / name
-        mod_dir.mkdir(parents=True, exist_ok=True)
-        installed = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-        (mod_dir / "meta.ini").write_text(
-            f"[General]\ninstalled={installed}\n", encoding="utf-8")
-    except OSError as exc:
-        QMessageBox.warning(view, "Create empty mod",
-                            f"Could not create the mod folder:\n{exc}")
-        return
-    model.insert_mod(row, name, above=False)
+
+    def _named(name):
+        name = (name or "").strip()
+        if not name:
+            return
+        # Name-collision guard (mods + separators, by display name).
+        existing = set()
+        for r in range(model.rowCount()):
+            e = model.entry(r)
+            existing.add(e.name)
+            existing.add(e.display_name)
+        if name in existing:
+            ConfirmOverlay.show_message(
+                view, "Name conflict",
+                f"A mod or separator named '{name}' already exists.")
+            return
+        try:
+            from datetime import datetime
+            mod_dir = staging / name
+            mod_dir.mkdir(parents=True, exist_ok=True)
+            installed = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            (mod_dir / "meta.ini").write_text(
+                f"[General]\ninstalled={installed}\n", encoding="utf-8")
+        except OSError as exc:
+            ConfirmOverlay.show_message(
+                view, "Create empty mod",
+                f"Could not create the mod folder:\n{exc}")
+            return
+        model.insert_mod(row, name, above=False)
+
+    TextInputOverlay.show_over(view, "Create empty mod", "Mod name:", _named,
+                               ok_label="Create")
 
 
 def _show_overwrite_log(view):
@@ -868,67 +873,85 @@ def _toggle_sep_lock(view, model, row):
 
 def _rename(view, model, row):
     e = model.entry(row)
-    new, ok = QInputDialog.getText(view, "Rename", "New name:",
-                                   text=e.display_name)
-    if not ok or not new.strip() or new.strip() == e.display_name:
-        return
-    if e.is_separator:
-        # No folder on disk — a pure modlist.txt edit is the whole rename.
-        # Migrate the separator's colour + deploy override to the new name so
-        # they follow it (Tk parity), then persist via the window callback.
-        old_name = e.name
-        model.rename(row, new.strip())
-        new_name = model.entry(row).name
-        cb = getattr(view, "on_separator_renamed", None)
-        if callable(cb) and old_name != new_name:
-            cb(old_name, new_name)
-        return
-    # Mods must go through the window: staging folder rename + modindex +
-    # per-mod state migration (strip prefixes / disabled plugins / excluded
-    # files / notes), not just the modlist.txt line.
-    cb = getattr(view, "on_rename_mod", None)
-    if callable(cb):
-        cb(e.name, new.strip())
+
+    def _named(new):
+        if new is None or not new.strip() or new.strip() == e.display_name:
+            return
+        if e.is_separator:
+            # No folder on disk — a pure modlist.txt edit is the whole rename.
+            # Migrate the separator's colour + deploy override to the new name
+            # so they follow it (Tk parity), then persist via the window
+            # callback.
+            old_name = e.name
+            model.rename(row, new.strip())
+            new_name = model.entry(row).name
+            cb = getattr(view, "on_separator_renamed", None)
+            if callable(cb) and old_name != new_name:
+                cb(old_name, new_name)
+            return
+        # Mods must go through the window: staging folder rename + modindex +
+        # per-mod state migration (strip prefixes / disabled plugins / excluded
+        # files / notes), not just the modlist.txt line.
+        cb = getattr(view, "on_rename_mod", None)
+        if callable(cb):
+            cb(e.name, new.strip())
+
+    TextInputOverlay.show_over(view, "Rename", "New name:", _named,
+                               initial=e.display_name, ok_label="Rename")
 
 
 def _set_priority(view, model, row):
     cur = model.data(model.index(row, COL_NAME), 0)
-    val, ok = QInputDialog.getInt(view, "Set priority",
-                                  f"Priority for {cur}:", 0, 0, 99999)
-    if ok:
-        model.set_priority(row, val)
+
+    def _picked(text):
+        try:
+            val = int((text or "").strip())
+        except ValueError:
+            return
+        model.set_priority(row, max(0, min(99999, val)))
+
+    from PySide6.QtGui import QIntValidator
+    TextInputOverlay.show_over(view, "Set priority", f"Priority for {cur}:",
+                               _picked, initial="0",
+                               validator=QIntValidator(0, 99999))
 
 
 def _add_separator(view, model, row, above):
-    name, ok = QInputDialog.getText(view, "Add separator", "Separator name:")
-    if ok and name.strip():
-        model.add_separator(row, name.strip(), above)
+    def _named(name):
+        if name and name.strip():
+            model.add_separator(row, name.strip(), above)
+
+    TextInputOverlay.show_over(view, "Add separator", "Separator name:",
+                               _named, ok_label="Add")
 
 
 def _remove(view, model, row):
     """Fully remove a mod: undeploy its files, delete its staging folder, drop
     its index/BSA/plugins entries, then remove the modlist row. (Not just the
     list line — that left the files on disk so the mod still read as installed.)"""
-    from PySide6.QtWidgets import QMessageBox
     e = model.entry(row)
     if e is None or e.is_separator:
         return
-    if QMessageBox.question(
-            view, "Remove mod",
-            f"Remove '{e.display_name}'?\n\nThis deletes the mod folder and "
-            "cannot be undone.") != QMessageBox.Yes:
-        return
-    name = e.name
-    game = getattr(view, "game", None)
-    profile_dir = getattr(view, "profile_dir", None)
-    if game is not None and profile_dir is not None:
-        try:
-            from Utils.mod_remove import remove_mods
-            remove_mods(game, profile_dir, [name],
-                        log_fn=lambda m: print(f"[remove] {m}", flush=True))
-        except Exception as exc:
-            print(f"[gui_qt] mod removal failed: {exc}", flush=True)
-    model.remove_row(row)
+
+    def _confirmed(ok):
+        if not ok:
+            return
+        name = e.name
+        game = getattr(view, "game", None)
+        profile_dir = getattr(view, "profile_dir", None)
+        if game is not None and profile_dir is not None:
+            try:
+                from Utils.mod_remove import remove_mods
+                remove_mods(game, profile_dir, [name],
+                            log_fn=lambda m: print(f"[remove] {m}", flush=True))
+            except Exception as exc:
+                print(f"[gui_qt] mod removal failed: {exc}", flush=True)
+        model.remove_row(row)
+
+    ConfirmOverlay.show_over(
+        view, "Remove mod",
+        f"Remove '{e.display_name}'?\n\nThis deletes the mod folder and "
+        "cannot be undone.", _confirmed)
 
 
 def _open_sep_settings(view, model, row):
@@ -958,39 +981,45 @@ def _open_sep_settings(view, model, row):
 # ---- new wired handlers (separator remove / multi, mod multi-remove) -------
 
 def _remove_separator(view, model, row):
-    from PySide6.QtWidgets import QMessageBox
     e = model.entry(row)
     if e is None or not e.is_separator:
         return
-    if QMessageBox.question(
-            view, "Remove separator",
-            f"Remove separator '{e.display_name}'?") != QMessageBox.Yes:
-        return
-    removed = e.name
-    model.remove_row(row)
-    cb = getattr(view, "on_separators_removed", None)
-    if callable(cb):
-        cb([removed])
+
+    def _confirmed(ok):
+        if not ok:
+            return
+        removed = e.name
+        model.remove_row(row)
+        cb = getattr(view, "on_separators_removed", None)
+        if callable(cb):
+            cb([removed])
+
+    ConfirmOverlay.show_over(view, "Remove separator",
+                             f"Remove separator '{e.display_name}'?",
+                             _confirmed)
 
 
 def _remove_separators_multi(view, model, sep_rows):
-    from PySide6.QtWidgets import QMessageBox
     if not sep_rows:
         return
-    if QMessageBox.question(
-            view, "Remove separators",
-            f"Remove {len(sep_rows)} separator(s)?") != QMessageBox.Yes:
-        return
-    # Remove high→low so earlier removals don't shift later row indices.
-    removed = []
-    for r in sorted(sep_rows, reverse=True):
-        e = model.entry(r)
-        if e is not None and e.is_separator:
-            removed.append(e.name)
-            model.remove_row(r)
-    cb = getattr(view, "on_separators_removed", None)
-    if callable(cb) and removed:
-        cb(removed)
+
+    def _confirmed(ok):
+        if not ok:
+            return
+        # Remove high→low so earlier removals don't shift later row indices.
+        removed = []
+        for r in sorted(sep_rows, reverse=True):
+            e = model.entry(r)
+            if e is not None and e.is_separator:
+                removed.append(e.name)
+                model.remove_row(r)
+        cb = getattr(view, "on_separators_removed", None)
+        if callable(cb) and removed:
+            cb(removed)
+
+    ConfirmOverlay.show_over(view, "Remove separators",
+                             f"Remove {len(sep_rows)} separator(s)?",
+                             _confirmed)
 
 
 def _set_sep_locks_multi(view, model, sep_rows, lock):
@@ -1010,26 +1039,29 @@ def _set_sep_locks_multi(view, model, sep_rows, lock):
 
 def _remove_mods_multi(view, model, mod_rows):
     """Fully remove every selected mod (one confirm), then drop the rows."""
-    from PySide6.QtWidgets import QMessageBox
     rows = [r for r in mod_rows
             if (e := model.entry(r)) is not None
             and not e.is_separator and not e.locked]
     if not rows:
         return
     names = [model.entry(r).name for r in rows]
-    if QMessageBox.question(
-            view, "Remove mods",
-            f"Remove {len(names)} mod(s)?\n\nThis deletes their folders and "
-            "cannot be undone.") != QMessageBox.Yes:
-        return
-    game = getattr(view, "game", None)
-    profile_dir = getattr(view, "profile_dir", None)
-    if game is not None and profile_dir is not None:
-        try:
-            from Utils.mod_remove import remove_mods
-            remove_mods(game, profile_dir, names,
-                        log_fn=lambda m: print(f"[remove] {m}", flush=True))
-        except Exception as exc:
-            print(f"[gui_qt] mod removal failed: {exc}", flush=True)
-    for r in sorted(rows, reverse=True):
-        model.remove_row(r)
+
+    def _confirmed(ok):
+        if not ok:
+            return
+        game = getattr(view, "game", None)
+        profile_dir = getattr(view, "profile_dir", None)
+        if game is not None and profile_dir is not None:
+            try:
+                from Utils.mod_remove import remove_mods
+                remove_mods(game, profile_dir, names,
+                            log_fn=lambda m: print(f"[remove] {m}", flush=True))
+            except Exception as exc:
+                print(f"[gui_qt] mod removal failed: {exc}", flush=True)
+        for r in sorted(rows, reverse=True):
+            model.remove_row(r)
+
+    ConfirmOverlay.show_over(
+        view, "Remove mods",
+        f"Remove {len(names)} mod(s)?\n\nThis deletes their folders and "
+        "cannot be undone.", _confirmed)

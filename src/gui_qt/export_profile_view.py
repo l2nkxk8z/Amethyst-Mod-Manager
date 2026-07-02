@@ -19,7 +19,7 @@ from PySide6.QtCore import Qt, Signal, QEvent
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QTableWidget, QTableWidgetItem, QCheckBox, QHeaderView, QFrame,
-    QRadioButton, QButtonGroup, QFileDialog, QListWidget,
+    QRadioButton, QButtonGroup, QListWidget,
     QListWidgetItem, QAbstractItemView,
 )
 
@@ -322,6 +322,9 @@ class ExportProfileView(QWidget):
     _versions_ready = Signal(int, object)
     # (ok, message) from the export worker → UI thread.
     _export_done = Signal(bool, str)
+    # pick_save_file's callback fires on the portal WORKER thread; marshal the
+    # chosen path to the GUI thread before touching any widget.
+    _save_path_picked = Signal(object)
 
     def __init__(self, window, game, api, log_fn=None):
         super().__init__()
@@ -339,6 +342,7 @@ class ExportProfileView(QWidget):
         self.setObjectName("ExportProfileView")
         self._versions_ready.connect(self._on_versions_ready)
         self._export_done.connect(self._on_export_done)
+        self._save_path_picked.connect(self._on_save_path_picked)
         self._build()
         self._load_rows()
         self._apply_filter()
@@ -692,16 +696,20 @@ class ExportProfileView(QWidget):
         pd = self._profile_dir()
         profile_name = pd.name if pd else "manifest"
         default_name = f"{profile_name}_export.amethyst"
-        start_dir = str(Path.home() / default_name)
-        out_path, _ = QFileDialog.getSaveFileName(
-            self, "Export Amethyst Manifest", start_dir,
-            "Amethyst Manifest (*.amethyst);;All files (*)")
-        if not out_path:
-            return
+        from Utils.portal_filechooser import pick_save_file
+        pick_save_file(
+            "Export Amethyst Manifest",
+            lambda path: self._save_path_picked.emit(path),
+            current_name=default_name,
+            filters=[("Amethyst Manifest (*.amethyst)", ["*.amethyst"]),
+                     ("All files", ["*"])])
 
+    def _on_save_path_picked(self, path):
+        if not path:
+            return
         # Prefetch missing sizes + write on a worker thread.
         threading.Thread(
-            target=self._export_worker, args=(out_path,),
+            target=self._export_worker, args=(str(path),),
             daemon=True, name="export-profile").start()
 
     def _export_worker(self, out_path: str):

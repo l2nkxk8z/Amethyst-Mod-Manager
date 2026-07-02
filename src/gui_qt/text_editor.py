@@ -202,9 +202,9 @@ class TextEditor(QWidget):
             self._set_dirty(False)
             self.saved.emit()
         except OSError as exc:
-            from PySide6.QtWidgets import QMessageBox
-            QMessageBox.critical(self, "Save failed",
-                                 f"Could not save {self._name}:\n{exc}")
+            from gui_qt.confirm_overlay import ConfirmOverlay
+            ConfirmOverlay.show_message(
+                self, "Save failed", f"Could not save {self._name}:\n{exc}")
 
     def revert(self):
         self._edit.blockSignals(True)

@@ -22,7 +22,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
-    QCheckBox, QRadioButton, QButtonGroup, QFrame, QColorDialog, QSizePolicy,
+    QCheckBox, QRadioButton, QButtonGroup, QFrame, QSizePolicy,
 )
 
 from gui_qt.theme_qt import active_palette, _c
@@ -260,10 +260,15 @@ class SeparatorSettingsView(QWidget):
     def _on_choose_colour(self):
         initial = QColor(self._color) if self._color else QColor(
             _c(active_palette(), "BG_SEP"))
-        chosen = QColorDialog.getColor(initial, self, "Separator colour")
-        if chosen.isValid():
-            self._color = chosen.name()  # "#rrggbb"
-            self._sync_colour_ui()
+
+        def _picked(chosen):
+            if chosen is not None and chosen.isValid():
+                self._color = chosen.name()  # "#rrggbb"
+                self._sync_colour_ui()
+
+        from gui_qt.color_picker_overlay import ColorPickerOverlay
+        ColorPickerOverlay.show_over(self, "Separator colour", initial,
+                                     _picked)
 
     def _on_reset_colour(self):
         self._color = None

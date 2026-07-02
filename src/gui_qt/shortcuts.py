@@ -31,7 +31,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QObject, QEvent, QItemSelection, QItemSelectionModel
 from PySide6.QtGui import QShortcut, QKeySequence
 from PySide6.QtWidgets import (
-    QApplication, QMessageBox, QLineEdit, QPlainTextEdit, QTextEdit,
+    QApplication, QLineEdit, QPlainTextEdit, QTextEdit,
     QAbstractSpinBox, QComboBox, QWidget,
 )
 
@@ -193,23 +193,29 @@ def _delete_selected(win):
     n = len(names)
     prompt = (f"Remove '{m.entry(rows[0]).display_name}'?" if n == 1
               else f"Remove {n} mods?")
-    if QMessageBox.question(
-            view, "Remove mod" if n == 1 else "Remove mods",
-            prompt + "\n\nThis deletes the mod folder(s) and cannot be undone."
-    ) != QMessageBox.Yes:
-        return
-    game = getattr(view, "game", None)
-    profile_dir = getattr(view, "profile_dir", None)
-    if game is not None and profile_dir is not None:
-        try:
-            from Utils.mod_remove import remove_mods
-            remove_mods(game, profile_dir, names,
-                        log_fn=lambda msg: print(f"[remove] {msg}", flush=True))
-        except Exception as exc:
-            print(f"[gui_qt] mod removal failed: {exc}", flush=True)
-    # Drop the rows high-to-low so indices stay stable.
-    for r in sorted(rows, reverse=True):
-        m.remove_row(r)
+
+    def _confirmed(ok):
+        if not ok:
+            return
+        game = getattr(view, "game", None)
+        profile_dir = getattr(view, "profile_dir", None)
+        if game is not None and profile_dir is not None:
+            try:
+                from Utils.mod_remove import remove_mods
+                remove_mods(game, profile_dir, names,
+                            log_fn=lambda msg: print(f"[remove] {msg}",
+                                                     flush=True))
+            except Exception as exc:
+                print(f"[gui_qt] mod removal failed: {exc}", flush=True)
+        # Drop the rows high-to-low so indices stay stable.
+        for r in sorted(rows, reverse=True):
+            m.remove_row(r)
+
+    from gui_qt.confirm_overlay import ConfirmOverlay
+    ConfirmOverlay.show_over(
+        view, "Remove mod" if n == 1 else "Remove mods",
+        prompt + "\n\nThis deletes the mod folder(s) and cannot be undone.",
+        _confirmed)
 
 
 def _scroll_top(win):

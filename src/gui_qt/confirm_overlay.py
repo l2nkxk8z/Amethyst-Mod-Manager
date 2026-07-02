@@ -6,6 +6,9 @@ buttons. ``on_done(True)`` on confirm, ``on_done(False)`` on cancel / Esc.
 
 Modeled on ``gui_qt/remove_previous_overlay.py`` but parameterised so it can back
 any yes/no prompt (e.g. the Profile Settings remove confirmations).
+
+Pass ``cancel_label=None`` for a single-button message card (OK-only) — the
+in-app replacement for ``QMessageBox.warning``/``critical``/``information``.
 """
 
 from __future__ import annotations
@@ -23,7 +26,8 @@ class ConfirmOverlay(QWidget):
     CARD_H = 240
 
     def __init__(self, host: QWidget, title: str, body: str, on_done,
-                 confirm_label: str = "Remove", cancel_label: str = "Cancel",
+                 confirm_label: str = "Remove",
+                 cancel_label: str | None = "Cancel",
                  danger: bool = True):
         super().__init__(host)
         self._host = host
@@ -61,11 +65,12 @@ class ConfirmOverlay(QWidget):
 
         bar = QHBoxLayout()
         bar.addStretch(1)
-        cancel = QPushButton(cancel_label)
-        cancel.setObjectName("FormButton")
-        cancel.setCursor(Qt.PointingHandCursor)
-        cancel.clicked.connect(lambda: self._finish(False))
-        bar.addWidget(cancel)
+        if cancel_label is not None:
+            cancel = QPushButton(cancel_label)
+            cancel.setObjectName("FormButton")
+            cancel.setCursor(Qt.PointingHandCursor)
+            cancel.clicked.connect(lambda: self._finish(False))
+            bar.addWidget(cancel)
         confirm = QPushButton(confirm_label)
         confirm.setObjectName("DangerButton" if danger else "PrimaryButton")
         confirm.setCursor(Qt.PointingHandCursor)
@@ -82,6 +87,13 @@ class ConfirmOverlay(QWidget):
     def show_over(cls, host, title, body, on_done, **kw):
         top = host.window() if host is not None else None
         return cls(top or host, title, body, on_done, **kw)
+
+    @classmethod
+    def show_message(cls, host, title, body, on_done=None, ok_label="OK"):
+        """OK-only message card (QMessageBox.warning/critical replacement)."""
+        return cls.show_over(host, title, body, on_done,
+                             confirm_label=ok_label, cancel_label=None,
+                             danger=False)
 
     # -- internals ----------------------------------------------------------
     def _reposition(self):

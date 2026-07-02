@@ -23,7 +23,6 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QLineEdit,
     QPushButton, QScrollArea, QFrame, QRadioButton, QCheckBox, QButtonGroup,
-    QMessageBox,
 )
 
 from gui_qt.theme_qt import active_palette, _c
@@ -721,26 +720,26 @@ class ConfigureGameView(QWidget):
         self._on_done(True, False)
 
     # ---- destructive actions ----------------------------------------------
-    def _confirm(self, title, text) -> bool:
-        box = QMessageBox(self)
-        box.setIcon(QMessageBox.Warning)
-        box.setWindowTitle(title)
-        box.setText(text)
-        box.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
-        box.setDefaultButton(QMessageBox.Cancel)
-        return box.exec() == QMessageBox.Yes
+    def _confirm(self, title, text, on_yes):
+        """Borderless in-app confirm; runs *on_yes* only on confirmation."""
+        from gui_qt.confirm_overlay import ConfirmOverlay
+        ConfirmOverlay.show_over(self, title, text,
+                                 lambda ok: on_yes() if ok else None,
+                                 confirm_label="Yes")
 
     def _on_remove(self):
         g = self._game
-        from Utils.config_paths import get_game_config_path
-        profile_root = g.get_profile_root()
-        paths_json = get_game_config_path(g.name)
         msg = (f"Remove the instance configuration for {g.name}?\n\n"
                "Deleted: game config + generated caches; the game is restored to "
                "vanilla.\nKept: your mods, profiles, and overwrite folders.\n\n"
                "This cannot be undone.")
-        if not self._confirm(f"Remove Instance — {g.name}", msg):
-            return
+        self._confirm(f"Remove Instance — {g.name}", msg, self._do_remove)
+
+    def _do_remove(self):
+        g = self._game
+        from Utils.config_paths import get_game_config_path
+        profile_root = g.get_profile_root()
+        paths_json = get_game_config_path(g.name)
         try:
             if hasattr(g, "restore"):
                 g.restore()
@@ -786,8 +785,11 @@ class ConfigureGameView(QWidget):
         msg = (f"Scan {target} and remove leftover deployed mod files (hardlinks/"
                "symlinks/copies) that weren't restored?\n\nVanilla game files are "
                "kept. This cannot be undone.")
-        if not self._confirm(f"Clean Game Folder — {g.name}", msg):
-            return
+        self._confirm(f"Clean Game Folder — {g.name}", msg,
+                      lambda: self._do_clean(target))
+
+    def _do_clean(self, target):
+        g = self._game
         try:
             from Utils.deploy import remove_deployed_files, restore_filemap_from_root
             target = Path(target)
