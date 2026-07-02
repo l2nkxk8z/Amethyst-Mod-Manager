@@ -334,7 +334,15 @@ class ConfigureGameView(QWidget):
                 getattr(g, "default_deploy_mode", "symlink") == "symlink"))
             if not rec_is_symlink:
                 self._rb_hardlink.setChecked(True)
+            # Fresh-game option defaults (mirror the Tk BooleanVar initials in
+            # add_game_dialog: script_extender_swap/archive_invalidation start ON,
+            # the rest OFF except prefix_numbering).
+            self._set_check("script_extender_swap", True)
             self._set_check("auto_deploy", False)
+            self._set_check("archive_invalidation", True)
+            self._set_check("profile_ini_files", False)
+            self._set_check("profile_saves", False)
+            self._set_check("prefix_numbering", True)
             try:
                 from Utils.ui_config import load_default_staging_path
                 root = load_default_staging_path()
