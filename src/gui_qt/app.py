@@ -29,6 +29,54 @@ from gui_qt import glue
 from Utils.proton_tools import DOTNET_VERSIONS
 
 
+def _load_bg3_modio(stem: str):
+    """Load a Games/Baldur's Gate 3/<stem>.py module by file path (the folder
+    name has a space, so it isn't importable by dotted path). Cached in
+    sys.modules under f"{stem}_bg3" — shared with the Tk copy and the wizard."""
+    import importlib.util
+    import sys as _sys
+    mod_name = f"{stem}_bg3"
+    cached = _sys.modules.get(mod_name)
+    if cached is not None:
+        return cached
+    bg3_dir = (Path(__file__).resolve().parent.parent
+               / "Games" / "Baldur's Gate 3")
+    spec = importlib.util.spec_from_file_location(mod_name, str(bg3_dir / f"{stem}.py"))
+    module = importlib.util.module_from_spec(spec)
+    _sys.modules[mod_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _modio_key_present(game) -> bool:
+    """True if this is BG3 and a mod.io API key is configured."""
+    try:
+        if getattr(game, "game_id", "") != "baldurs_gate_3":
+            return False
+        return bool(_load_bg3_modio("modio_key").load_modio_key())
+    except Exception:
+        return False
+
+
+def _check_modio_updates(game, staging, log_fn, only_names=None):
+    """BG3-only mod.io update check. Returns a list of ModioUpdateInfo (mods
+    with a newer file, or unknown installed version), or [] for other games /
+    when no mod.io key is configured. *only_names* restricts the check to those
+    staging folder names. Never raises."""
+    try:
+        if getattr(game, "game_id", "") != "baldurs_gate_3":
+            return []
+        api_key = _load_bg3_modio("modio_key").load_modio_key()
+        if not api_key:
+            return []
+        checker = _load_bg3_modio("modio_update_checker")
+        return checker.check_for_updates(
+            Path(staging), api_key, progress_cb=log_fn, only_names=only_names)
+    except Exception as e:
+        log_fn(f"mod.io: update check failed — {e}")
+        return []
+
+
 class MainWindow(QMainWindow):
     # Carries (generation, ConflictData) from a worker thread to the UI thread
     # (queued connection — thread-safe). See _rebuild_conflicts_async.
@@ -2420,8 +2468,10 @@ class MainWindow(QMainWindow):
     # a worker thread and reloads.
 
     def _on_check_updates(self, names=None):
-        """Check Nexus for mod updates + missing requirements. *names* limits the
-        check to a set of mod folder names (right-click subset); None = all."""
+        """Check for mod updates + missing requirements. Runs the Nexus check
+        and (for BG3, when a mod.io key is set) the mod.io check in parallel —
+        mirroring the Tk _run_check_updates. *names* limits the check to a set
+        of mod folder names (right-click subset); None = all."""
         if self._updates_running:
             self._notify("An update check is already running.", "info")
             return
@@ -2429,15 +2479,27 @@ class MainWindow(QMainWindow):
         if game is None or not game.is_configured():
             self._notify("No configured game selected.", "warning")
             return
+
         domain = getattr(game, "nexus_game_domain", "") or ""
-        if not domain:
-            self._notify(f"'{game.name}' has no Nexus Mods page.", "warning")
+        api = self._ensure_nexus_api() if domain else None
+        have_nexus = domain and api is not None
+        have_modio = _modio_key_present(game)
+
+        # mod.io (BG3) can run without a Nexus login. Only bail for "needs Nexus
+        # login" when there's also no mod.io key to fall back on.
+        if not have_nexus and not have_modio:
+            if getattr(game, "game_id", "") == "baldurs_gate_3":
+                self._notify(
+                    "Log in to Nexus (Nexus ▸ Login) or set a mod.io API key "
+                    "(mod.io API Key tool) to check for updates.", "warning")
+            elif not domain:
+                self._notify(f"'{game.name}' has no Nexus Mods page.", "warning")
+            else:
+                self._notify(
+                    "Log in first: Nexus ▸ Login to Nexus ▸ Login via SSO.",
+                    "warning")
             return
-        api = self._ensure_nexus_api()
-        if api is None:
-            self._notify("Log in first: Nexus ▸ Login to Nexus ▸ Login via SSO.",
-                         "warning")
-            return
+
         staging = self._gs.staging_dir()
         if staging is None:
             self._notify("No mod staging folder for this profile.", "warning")
@@ -2451,23 +2513,48 @@ class MainWindow(QMainWindow):
             btn.setEnabled(False)
             btn.setText("Checking…")
         n = len(subset) if subset else "all"
-        self._notify(f"Checking Nexus for updates ({n})…", "info")
+        self._notify(f"Checking for updates ({n})…", "info")
 
         import threading
         from Nexus.nexus_update_checker import check_for_updates
 
         def _worker():
+            out = {"nexus": None, "modio": []}
             try:
-                result = check_for_updates(
-                    api, staging, game_domain=domain, save_results=True,
-                    enabled_only=subset,
-                    progress_cb=lambda m: self._op_log.emit(f"[nexus] {m}"),
-                )
+                # Run the mod.io check (BG3) in parallel with the Nexus check —
+                # they hit different APIs and write disjoint meta.ini keys.
+                modio_box = {"results": []}
+
+                def _modio_work():
+                    modio_box["results"] = _check_modio_updates(
+                        game, staging,
+                        lambda m: self._op_log.emit(f"[modio] {m}"),
+                        only_names=subset)
+
+                modio_thread = None
+                if have_modio:
+                    modio_thread = threading.Thread(
+                        target=_modio_work, daemon=True, name="check-modio")
+                    modio_thread.start()
+
+                if have_nexus:
+                    try:
+                        out["nexus"] = check_for_updates(
+                            api, staging, game_domain=domain, save_results=True,
+                            enabled_only=subset,
+                            progress_cb=lambda m: self._op_log.emit(f"[nexus] {m}"),
+                        )
+                    except Exception as exc:
+                        self._op_log.emit(f"[nexus] update check failed: {exc}")
+
+                if modio_thread is not None:
+                    modio_thread.join()
+                    out["modio"] = modio_box["results"]
             except Exception as exc:
-                self._append_log(f"[nexus] update check failed: {exc}")
+                self._append_log(f"update check failed: {exc}")
                 self._updates_ready.emit(None)
                 return
-            self._updates_ready.emit(result)
+            self._updates_ready.emit(out)
 
         threading.Thread(target=_worker, daemon=True, name="check-updates").start()
 
@@ -2481,18 +2568,31 @@ class MainWindow(QMainWindow):
         if result is None:
             self._notify("Update check failed — see the log.", "error")
             return
-        updates, missing = result
-        if not updates and not missing:
-            self._notify("Nexus: all mods are up to date.", "info")
-        else:
-            parts = []
+
+        nexus = result.get("nexus")
+        modio = result.get("modio") or []
+        parts = []
+        if nexus is not None:
+            updates, missing = nexus
             if updates:
-                parts.append(f"{len(updates)} update"
+                parts.append(f"Nexus: {len(updates)} update"
                              f"{'s' if len(updates) != 1 else ''}")
             if missing:
                 parts.append(f"{len(missing)} missing requirement"
                              f"{'s' if len(missing) != 1 else ''}")
-            self._notify("Nexus: " + ", ".join(parts) + ".", "warning")
+        modio_updates = [u for u in modio if not getattr(u, "unknown", False)]
+        modio_unknown = [u for u in modio if getattr(u, "unknown", False)]
+        if modio_updates:
+            parts.append(f"mod.io: {len(modio_updates)} update"
+                         f"{'s' if len(modio_updates) != 1 else ''}")
+        if modio_unknown:
+            parts.append(f"{len(modio_unknown)} mod.io version"
+                         f"{'s' if len(modio_unknown) != 1 else ''} unknown")
+
+        if parts:
+            self._notify(", ".join(parts) + ".", "warning")
+        else:
+            self._notify("All mods are up to date.", "info")
         # Re-read meta.ini (now updated on disk) → repaint flags + refresh filters.
         self._reload_modlist()
 
