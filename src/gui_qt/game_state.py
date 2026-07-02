@@ -331,6 +331,21 @@ class GameState:
             except Exception:
                 pass
 
+    def reassert_active_profile(self) -> None:
+        """Force the game object's ``_active_profile_dir`` back in sync with our
+        ``profile``.
+
+        Background workers (restore, profile-remove, bundle import) temporarily
+        swap the game's ``_active_profile_dir`` and restore it in a ``finally``
+        block. If the user switches profiles while one runs — or a worker
+        restores to the wrong value (e.g. ``None``/default) — the game object
+        can be left pointing at a different profile than the dropdown shows,
+        which makes path-derived actions (Open ▸ Staging/Profile folder, etc.)
+        resolve to the wrong profile. Call this before reading any path that
+        depends on the active profile so GameState stays the single authority.
+        """
+        self._apply_active_profile()
+
     def _apply_active_profile(self) -> None:
         g = self.game
         if g is not None and self.profile:

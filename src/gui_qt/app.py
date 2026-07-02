@@ -4209,6 +4209,10 @@ class MainWindow(QMainWindow):
         if game is None or not game.is_configured():
             self._notify("No configured game selected.", "warning")
             return
+        # A background worker may have left the game's _active_profile_dir out of
+        # sync with the selected profile — re-assert it so staging/profile folder
+        # opens resolve against the profile the dropdown actually shows.
+        self._gs.reassert_active_profile()
         if which == "game":
             self._open_folder_path(game.get_game_path(), "game folder")
         elif which == "prefix":

@@ -457,6 +457,10 @@ class ProfileSettingsView(QWidget):
         for the progress popup)."""
         win = self._window
         from Utils.deploy import restore_root_folder
+        # Remember the profile we're actually on so the finally block restores to
+        # it — restoring to None (default) would desync the game object from the
+        # selected profile and make later path-derived opens resolve wrong.
+        prev_profile_dir = getattr(game, "_active_profile_dir", None)
         game.set_active_profile_dir(profile_dir)
         game.load_paths()
         try:
@@ -474,7 +478,7 @@ class ProfileSettingsView(QWidget):
                                       if hasattr(game, "root_restore_protect_dirs")
                                       else None))
         finally:
-            game.set_active_profile_dir(None)
+            game.set_active_profile_dir(prev_profile_dir)
             game.load_paths()
 
     def _on_remove_finished(self, profile: str, ok: bool):
