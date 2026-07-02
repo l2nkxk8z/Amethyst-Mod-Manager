@@ -439,20 +439,37 @@ class PluginView(QTreeView):
         self._press_row = -1
         super().mouseReleaseEvent(event)
 
+    def _visible_rows(self) -> list[int]:
+        """Rows not hidden by the search box / filter panel."""
+        m = self.model()
+        return [r for r in range(m.rowCount())
+                if not self.isRowHidden(r, self.rootIndex())]
+
     def _update_drop_slot(self, y: int):
         m = self.model()
         n = m.rowCount()
-        for r in range(n):
+        vis = self._visible_rows()
+        if not vis:
+            self._drop_slot = 0
+            return
+        slot = None
+        for r in vis:
             rect = self.visualRect(m.index(r, 0))
             if rect.top() <= y < rect.bottom():
-                self._drop_slot = r if y < rect.center().y() else r + 1
-                return
-        first = self.visualRect(m.index(0, 0)) if n else None
-        if first is not None and y < first.top():
-            self._drop_slot = 0
-        else:
-            self._drop_slot = n
-        self._drop_slot = max(0, min(self._drop_slot, n))
+                slot = r if y < rect.center().y() else r + 1
+                break
+        if slot is None:
+            first = self.visualRect(m.index(vis[0], 0))
+            slot = vis[0] if y < first.top() else vis[-1] + 1
+        slot = max(0, min(slot, n))
+        # Never leave the slot on a hidden (filtered-out) row: visualRect()
+        # of a hidden row is empty (top()==0), which would draw the indicator
+        # at the viewport top instead of under the cursor. Snap to the next
+        # visible row so the line and the drop agree.
+        if 0 < slot < n and self.isRowHidden(slot, self.rootIndex()):
+            nxt = next((r for r in vis if r >= slot), None)
+            slot = nxt if nxt is not None else n
+        self._drop_slot = slot
 
     def _autoscroll_tick(self):
         if not self._drag_active:
@@ -478,10 +495,17 @@ class PluginView(QTreeView):
             return
         m = self.model()
         n = m.rowCount()
-        if self._drop_slot >= n:
-            y = self.visualRect(m.index(n - 1, 0)).bottom()
-        else:
+        # Anchor the line to visible rows only: visualRect() of a hidden row
+        # (filtered out) is empty, which would paint the line at y=0.
+        if self._drop_slot < n and not self.isRowHidden(self._drop_slot,
+                                                        self.rootIndex()):
             y = self.visualRect(m.index(self._drop_slot, 0)).top()
+        else:
+            vis = self._visible_rows()
+            prev = next((r for r in reversed(vis) if r < self._drop_slot), None)
+            if prev is None:
+                return
+            y = self.visualRect(m.index(prev, 0)).bottom()
         p = QPainter(self.viewport())
         pen = QPen(QColor("#5aa9ff")); pen.setWidth(2); p.setPen(pen)
         p.drawLine(0, y, self.viewport().width(), y)

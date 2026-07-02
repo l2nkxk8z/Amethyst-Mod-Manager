@@ -648,18 +648,25 @@ class ModListView(QTreeView):
             self._drop_slot = 0
             return
         # Find the visible row under the cursor; drop before/after by half-row.
+        slot = None
         for r in vis:
             rect = self.visualRect(m.index(r, 0))
             if rect.top() <= y < rect.bottom():
-                self._drop_slot = r if y < rect.center().y() else r + 1
-                return
-        # Above the first / below the last visible row.
-        first_rect = self.visualRect(m.index(vis[0], 0))
-        if y < first_rect.top():
-            self._drop_slot = vis[0]
-        else:
-            self._drop_slot = vis[-1] + 1
-        self._drop_slot = max(0, min(self._drop_slot, n))
+                slot = r if y < rect.center().y() else r + 1
+                break
+        if slot is None:
+            # Above the first / below the last visible row.
+            first_rect = self.visualRect(m.index(vis[0], 0))
+            slot = vis[0] if y < first_rect.top() else vis[-1] + 1
+        slot = max(0, min(slot, n))
+        # Never leave the slot on a hidden row (inside a collapsed block):
+        # visualRect() of a hidden row is empty (top()==0), which would draw
+        # the indicator at the viewport top instead of under the cursor. Snap
+        # to the next visible row so the line and the drop agree.
+        if 0 < slot < n and self.isRowHidden(slot, self.rootIndex()):
+            nxt = next((r for r in vis if r >= slot), None)
+            slot = nxt if nxt is not None else n
+        self._drop_slot = slot
 
     def _commit_drop(self):
         if not self._drag_rows or self._drop_slot < 0:
@@ -712,12 +719,17 @@ class ModListView(QTreeView):
             return
         m = self.model()
         n = m.rowCount()
-        if self._drop_slot >= n:
-            ref = self.visualRect(m.index(n - 1, 0))
-            y = ref.bottom()
+        # Anchor the line to visible rows only: visualRect() of a hidden row
+        # (collapsed block) is empty, which would paint the line at y=0.
+        if self._drop_slot < n and not self.isRowHidden(self._drop_slot,
+                                                        self.rootIndex()):
+            y = self.visualRect(m.index(self._drop_slot, 0)).top()
         else:
-            ref = self.visualRect(m.index(self._drop_slot, 0))
-            y = ref.top()
+            vis = self._visible_rows()
+            prev = next((r for r in reversed(vis) if r < self._drop_slot), None)
+            if prev is None:
+                return
+            y = self.visualRect(m.index(prev, 0)).bottom()
         p = QPainter(self.viewport())
         pen = QPen(QColor("#5aa9ff"))
         pen.setWidth(2)
