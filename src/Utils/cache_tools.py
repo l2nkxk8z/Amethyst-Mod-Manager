@@ -23,6 +23,11 @@ from Utils.config_paths import (
     get_config_dir, get_download_cache_dir, get_profiles_dir,
 )
 
+# Names at the cache root that are NOT per-game caches and must survive a
+# "Clear All" (moved here from gui/cache_manager_overlay.py so both toolkits
+# share one definition).
+CLEAR_ALL_PRESERVE: frozenset[str] = frozenset({"md5_cache.json"})
+
 
 def format_size(n_bytes: int) -> str:
     """Human-readable byte count ("12.3 MB"); "—" for empty/unknown."""
@@ -49,6 +54,49 @@ def dir_size(path: Path) -> int:
     except OSError:
         pass
     return total
+
+
+def enumerate_game_caches() -> list[Path]:
+    """Per-game cache subdirs at the download-cache root, sorted
+    case-insensitively, excluding CLEAR_ALL_PRESERVE names. [] if root missing.
+    (Neutral port of gui/cache_manager_overlay._enumerate_game_caches.)"""
+    cache_dir = get_download_cache_dir()
+    if not cache_dir.is_dir():
+        return []
+    try:
+        return sorted(
+            (p for p in cache_dir.iterdir()
+             if p.is_dir() and p.name not in CLEAR_ALL_PRESERVE),
+            key=lambda p: p.name.lower(),
+        )
+    except OSError:
+        return []
+
+
+def game_cache_sizes(names: list[str]) -> dict[str, int]:
+    """Map each per-game cache name -> total byte size (reuses dir_size)."""
+    root = get_download_cache_dir()
+    return {name: dir_size(root / name) for name in names}
+
+
+def clear_game_caches(names: list[str]) -> tuple[int, list[str]]:
+    """rmtree each named per-game cache dir under the download-cache root.
+    Returns (cleared_count, errors) where errors are 'name: msg' strings.
+    Best-effort; never touches CLEAR_ALL_PRESERVE names."""
+    root = get_download_cache_dir()
+    cleared = 0
+    errors: list[str] = []
+    for name in names:
+        if name in CLEAR_ALL_PRESERVE:
+            continue
+        target = root / name
+        try:
+            if target.is_dir():
+                shutil.rmtree(target, ignore_errors=True)
+                cleared += 1
+        except OSError as exc:
+            errors.append(f"{name}: {exc}")
+    return cleared, errors
 
 
 def orphaned_tmp_dirs() -> list[Path]:
@@ -92,10 +140,28 @@ def orphaned_tmp_dirs() -> list[Path]:
     return found
 
 
+def orphaned_tmp_size() -> int:
+    """Total bytes across every orphaned ``modmgr_*`` temp dir."""
+    return sum(dir_size(d) for d in orphaned_tmp_dirs())
+
+
 def total_cache_size() -> int:
     """Size of the download cache plus every orphaned ``modmgr_*`` temp dir."""
-    return dir_size(get_download_cache_dir()) + sum(
-        dir_size(d) for d in orphaned_tmp_dirs())
+    return dir_size(get_download_cache_dir()) + orphaned_tmp_size()
+
+
+def clear_orphaned_tmp_dirs() -> tuple[int, list[str]]:
+    """Delete every orphaned ``modmgr_*`` temp dir. Returns (cleared, errors)
+    ('path: msg' strings). Best-effort — individual failures are recorded."""
+    cleared = 0
+    errors: list[str] = []
+    for orphan in orphaned_tmp_dirs():
+        try:
+            shutil.rmtree(orphan, ignore_errors=True)
+            cleared += 1
+        except OSError as exc:
+            errors.append(f"{orphan}: {exc}")
+    return cleared, errors
 
 
 def clear_download_cache() -> int:
@@ -119,10 +185,5 @@ def clear_download_cache() -> int:
                 pass
     except OSError:
         pass
-    for orphan in orphaned_tmp_dirs():
-        try:
-            shutil.rmtree(orphan, ignore_errors=True)
-            removed += 1
-        except OSError:
-            pass
-    return removed
+    cleared_orphans, _ = clear_orphaned_tmp_dirs()
+    return removed + cleared_orphans

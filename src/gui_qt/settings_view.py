@@ -23,7 +23,6 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea, QFrame,
     QLabel, QCheckBox, QComboBox, QSlider, QLineEdit, QPushButton, QGroupBox,
-    QMessageBox,
 )
 
 from gui_qt.theme_qt import active_palette, _c
@@ -418,26 +417,13 @@ class SettingsView(QWidget):
             self._cache_btn.setText(f"Manage Caches… ({format_size(size)})")
 
     def _on_manage_caches(self):
-        from Utils.cache_tools import (
-            total_cache_size, orphaned_tmp_dirs, format_size,
-            clear_download_cache,
-        )
-        size = total_cache_size()
-        n_orphans = len(orphaned_tmp_dirs())
-        msg = (f"Clear the download cache?\n\n"
-               f"This removes cached mod archives"
-               + (f" and {n_orphans} leftover temp folder(s)" if n_orphans else "")
-               + f".\nTotal to free: {format_size(size)}")
-        box = QMessageBox(self)
-        box.setWindowTitle("Manage Caches")
-        box.setText(msg)
-        box.setStandardButtons(QMessageBox.Yes | QMessageBox.Cancel)
-        box.setDefaultButton(QMessageBox.Cancel)
-        if box.exec() != QMessageBox.Yes:
-            return
-        removed = clear_download_cache()
-        self._notify(f"Cleared {removed} cache item(s).", "info")
-        self._refresh_cache_size()
+        """Open the borderless per-game cache browser overlay (Tk parity).
+        Re-scans the button's size label when it closes (clears change it)."""
+        from gui_qt.cache_manager_overlay import CacheManagerOverlay
+        active = getattr(getattr(self._window, "_gs", None), "game_name", "") or ""
+        CacheManagerOverlay.show_over(
+            self._window, active_game_name=active,
+            on_closed=self._refresh_cache_size)
 
     # ---- helpers ----------------------------------------------------------
     def _rebuild_conflicts(self):
