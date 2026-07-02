@@ -3002,6 +3002,7 @@ class CollectionDetailDialog(tk.Frame):
         _dl_lock = threading.Lock()
         _dl_done = 0
         _dl_total = len(to_download)
+        _pre_done = installed + skipped
         mod_panel = getattr(app, "_mod_panel", None)
 
         # --- Single collection-wide progress bar ---
@@ -3205,7 +3206,7 @@ class CollectionDetailDialog(tk.Frame):
                     _akey = str(result.file_path)
                     _archive_use_count[_akey] = _archive_use_count.get(_akey, 0) + 1
                 _inst_done = _install_counters["done"]
-            _set_status(f"Downloaded {done}/{_dl_total}, installed {_inst_done}/{_dl_total}\u2026")
+            _set_status(f"Downloaded {_pre_done + done}/{total}, installed {_pre_done + _inst_done}/{total}\u2026")
 
             # Remove this mod's per-mod download row from the overlay.
             try:
@@ -3392,8 +3393,8 @@ class CollectionDetailDialog(tk.Frame):
             # Update progress and mark row green — also write to registry for reconnect.
             with _dl_lock:
                 dl_done_now = _dl_done
-            _set_status(f"Downloaded {dl_done_now}/{_dl_total}, installed {done_so_far}/{_dl_total}\u2026")
-            _set_progress(done_so_far / _dl_total if _dl_total else 1.0)
+            _set_status(f"Downloaded {_pre_done + dl_done_now}/{total}, installed {_pre_done + done_so_far}/{total}\u2026")
+            _set_progress((_pre_done + done_so_far) / total if total else 1.0)
             if mod.file_id and folder_name:
                 _install_state["installed_fids"].add(mod.file_id)
                 try:
@@ -3424,7 +3425,7 @@ class CollectionDetailDialog(tk.Frame):
         # ------------------------------------------------------------------
         if to_download:
             _set_status(f"Downloading & installing {_dl_total} mod(s)\u2026")
-            _set_progress(0.0)
+            _set_progress(_pre_done / total if total else 0.0)
             _to_download_sorted = sorted(
                 to_download,
                 key=lambda m: getattr(m, "size_bytes", 0) or 0,
@@ -5618,6 +5619,7 @@ class CollectionDetailDialog(tk.Frame):
         _current_phase: int | None = None
 
         dl_total = len(to_download)
+        _pre_done = installed + skipped
         for idx_0, mod in enumerate(to_download):
             if self._manual_cancel_event.is_set():
                 break
@@ -5632,7 +5634,7 @@ class CollectionDetailDialog(tk.Frame):
             idx = idx_0 + 1
             # Update overlay on main thread and wait for it to complete
             _ready = threading.Event()
-            def _do_update(_m=mod, _i=idx, _t=dl_total, _inst=installed, _up=to_download[idx_0+1:]):
+            def _do_update(_m=mod, _i=_pre_done + idx, _t=total, _inst=installed, _up=to_download[idx_0+1:]):
                 try:
                     self._update_manual_overlay(_m, _i, _t, _inst, upcoming_mods=_up)
                 except Exception:
