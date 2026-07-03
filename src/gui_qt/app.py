@@ -322,6 +322,10 @@ class MainWindow(QMainWindow):
         gs = self._gs
         if gs.game_name:
             self._game_selector.set_items(gs.game_names, current=gs.game_name)
+        else:
+            # No games configured — the button invites the user to add one
+            # instead of showing stale placeholder names.
+            self._game_selector.set_items([], current="Add game")
         self._refresh_play_selector()
         profs = gs.profiles()
         if profs:
@@ -1035,11 +1039,12 @@ class MainWindow(QMainWindow):
         h.setContentsMargins(8, 6, 8, 6)
         h.setSpacing(6)
 
-        # Game selector — no label; the game names make it self-evident.
+        # Game selector — no label; the game names make it self-evident. Items
+        # are populated from the configured games (_populate_selectors); with
+        # none configured the button reads "Add game".
         self._game_selector = SelectorButton(
-            items=["Stardew Valley", "Cyberpunk 2077", "Fallout 4",
-                   "Hogwarts Legacy"],
-            current="Stardew Valley",
+            items=[],
+            current="Add game",
             actions=[
                 ("Add game…", lambda: self._on_game_action("add")),
                 ("Configure game…", lambda: self._on_game_action("configure")),
@@ -1311,7 +1316,12 @@ class MainWindow(QMainWindow):
             from Utils.game_helpers import _load_games, _GAMES
             names = _load_games()
             self._gs.game_names = names
-            self._game_selector.set_items(names, current=self._gs.game_name)
+            real_names = [n for n in names if n != "No games configured"]
+            if real_names:
+                self._game_selector.set_items(
+                    real_names, current=self._gs.game_name)
+            else:
+                self._game_selector.set_items([], current="Add game")
             self._append_log(f"[game] custom game defined: {saved_defn['name']}")
             game = _GAMES.get(saved_defn["name"])
             if game is not None:
@@ -3677,7 +3687,15 @@ class MainWindow(QMainWindow):
                 from Utils.game_helpers import _load_games
                 names = _load_games()
                 self._gs.game_names = names
-                self._game_selector.set_items(names, current=self._gs.game_name)
+                # _load_games returns the ["No games configured"] sentinel when
+                # nothing is configured — don't surface that as a menu item;
+                # show the "Add game" prompt instead.
+                real_names = [n for n in names if n != "No games configured"]
+                if real_names:
+                    self._game_selector.set_items(
+                        real_names, current=self._gs.game_name)
+                else:
+                    self._game_selector.set_items([], current="Add game")
                 if saved and game.name in names:
                     self._on_game_changed(game.name)
                     self._game_selector.set_current(game.name)
