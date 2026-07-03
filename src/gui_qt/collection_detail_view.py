@@ -100,6 +100,7 @@ class CollectionDetailView(QWidget):
 
     _detail_ready = Signal(object)      # (name, size, count, mods, dl_path, revisions) | None
     _manifest_ready = Signal(object)    # list[(name, url)]
+    title_resolved = Signal(str)        # real collection name once the detail loads
 
     def __init__(self, api, collection, game, log_fn=None, on_install=None,
                  revision_number=None, local_manifest=None, bundle_zip=None,
@@ -197,6 +198,7 @@ class CollectionDetailView(QWidget):
         title = QLabel(col.name or col.slug or "Collection")
         title.setStyleSheet(
             f"color:{_c(p,'TEXT_MAIN')}; font-weight:600; font-size:15px;")
+        self._title_lbl = title
         hb.addWidget(title)
         if col.user_name:
             author = QLabel(f"by {col.user_name}")
@@ -406,6 +408,13 @@ class CollectionDetailView(QWidget):
             return
         name, total_size, mod_count, mods, dl_path, revisions = result
         self._dl_path = dl_path or ""   # collection-archive download link (manifest)
+        # The bare NexusCollection built for NXM / "Open Current" only knows the
+        # slug, so the header + tab initially show the id-like slug. Now that the
+        # real name has arrived, update both.
+        if name and getattr(self, "_title_lbl", None) is not None:
+            self._title_lbl.setText(name)
+            self._collection.name = name
+            self.title_resolved.emit(name)
         # `revisions` is populated only on the latest fetch (empty on a specific
         # revision fetch) — don't clobber the stored list.
         if revisions:

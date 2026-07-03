@@ -1775,6 +1775,11 @@ class MainWindow(QMainWindow):
                 collection, view, chosen, skipped, intent))
         title = f"Collection: {collection.name or collection.slug}"
         self._tabs.open_tab(view, title, key=key)
+        # NXM / "Open Current" build a bare NexusCollection that only knows the
+        # slug, so the title shows the id-like slug until the detail loads. Update
+        # the tab caption once the real collection name resolves.
+        view.title_resolved.connect(
+            lambda name, k=key: self._tabs.set_tab_title(k, f"Collection: {name}"))
 
     # ---- Collection install (automatic / premium) ------------------------
     def _install_collection(self, collection, detail_view, chosen, skipped,
