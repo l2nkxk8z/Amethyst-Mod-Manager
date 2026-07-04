@@ -418,10 +418,13 @@ class ModFilesView(QWidget):
         if self.game is None or self._mod_name is None or node.rel_str is None:
             return None
         try:
-            from Utils.filemap import OVERWRITE_NAME
+            from Utils.filemap import OVERWRITE_NAME, ROOT_FOLDER_NAME
             if self._mod_name == OVERWRITE_NAME and hasattr(
                     self.game, "get_effective_overwrite_path"):
                 base = Path(self.game.get_effective_overwrite_path())
+            elif self._mod_name == ROOT_FOLDER_NAME and hasattr(
+                    self.game, "get_effective_root_folder_path"):
+                base = Path(self.game.get_effective_root_folder_path())
             else:
                 base = Path(self.game.get_effective_mod_staging_path()) / self._mod_name
         except Exception:

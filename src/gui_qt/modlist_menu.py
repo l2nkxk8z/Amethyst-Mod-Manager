@@ -92,13 +92,21 @@ def build_context_menu(view, index):
             state["group_started"] = False
 
     if entry.is_separator and entry.name in _boundary_names():
-        # Overwrite gets a Log item; Root Folder gets nothing.
+        # The synthetic Overwrite / Root Folder rows share a small menu:
+        #   Open folder — both (they resolve to a real on-disk folder)
+        #   Log         — both (files swept in on restore; Root Folder gets its
+        #                 own .mm_overwrite_log.txt written by _move_runtime_files)
+        #   Show Conflicts — Overwrite only (Root Folder has no conflict data)
         from Utils.filemap import OVERWRITE_NAME
-        if entry.name == OVERWRITE_NAME and not multi_mods and not multi_seps:
-            act("Log", lambda: _show_overwrite_log(view),
-                enabled=getattr(view, "game", None) is not None)
-            return menu
-        return None
+        if multi_mods or multi_seps:
+            return None
+        has_game = getattr(view, "game", None) is not None
+        act("Open folder", lambda: _open_folder(view, model, row))
+        act("Log", lambda: _show_overwrite_log(view, entry.name),
+            enabled=has_game)
+        if entry.name == OVERWRITE_NAME and _has_conflict(model, row):
+            act("Show Conflicts", lambda: _show_conflicts(view, entry.name))
+        return menu
 
     if entry.is_separator:
         _build_separator_menu(view, model, row, entry, sel_seps, multi_seps,
@@ -295,12 +303,19 @@ def _set_enabled(view, model, rows, state):
 
 
 def _open_folder(view, model, row):
-    """Open the mod's staging folder via the platform opener (Utils.xdg)."""
-    name = model.entry(row).name
-    staging = getattr(view, "staging_dir", None)
-    if staging is None:
-        return
-    path = staging / name
+    """Open the row's on-disk folder via the platform opener (Utils.xdg).
+
+    Uses the view's _resolve_entry_folder so the synthetic Overwrite /
+    Root Folder rows open their effective deploy paths, not staging/<name>."""
+    path = None
+    resolver = getattr(view, "_resolve_entry_folder", None)
+    if callable(resolver):
+        path = resolver(row)
+    if path is None:
+        staging = getattr(view, "staging_dir", None)
+        if staging is None:
+            return
+        path = staging / model.entry(row).name
     try:
         from Utils.xdg import xdg_open
         xdg_open(str(path))
@@ -850,22 +865,32 @@ def _create_empty_mod(view, model, row):
                                ok_label="Create")
 
 
-def _show_overwrite_log(view):
-    """Show the read-only Overwrite-log overlay (files swept into overwrite/ per
-    restore). Path = game.get_effective_overwrite_path()/OVERWRITE_LOG_NAME."""
+def _show_overwrite_log(view, boundary_name=None):
+    """Show the read-only restore-log overlay — files swept into the deploy
+    target on restore, parsed from OVERWRITE_LOG_NAME. Overwrite reads
+    game.get_effective_overwrite_path(); Root Folder reads
+    game.get_effective_root_folder_path() (standard-deployed games sweep
+    runtime files there, so it gets its own .mm_overwrite_log.txt)."""
     game = getattr(view, "game", None)
     if game is None:
         return
+    from Utils.filemap import ROOT_FOLDER_NAME
+    is_root = boundary_name == ROOT_FOLDER_NAME
     text = ""
     try:
         from Utils.deploy_shared import OVERWRITE_LOG_NAME
-        log_path = game.get_effective_overwrite_path() / OVERWRITE_LOG_NAME
+        base = (game.get_effective_root_folder_path() if is_root
+                else game.get_effective_overwrite_path())
+        log_path = base / OVERWRITE_LOG_NAME
         if log_path.is_file():
             text = log_path.read_text(encoding="utf-8")
     except Exception:
         text = ""
+    title = (view.tr("Files swept into Root Folder (newest restore first)")
+             if is_root
+             else view.tr("Files swept into Overwrite (newest restore first)"))
     from gui_qt.overwrite_log_overlay import OverwriteLogOverlay, parse_overwrite_log
-    OverwriteLogOverlay.show_over(view, parse_overwrite_log(text))
+    OverwriteLogOverlay.show_over(view, parse_overwrite_log(text), title=title)
 
 
 def _toggle_collapse(view, model, row):

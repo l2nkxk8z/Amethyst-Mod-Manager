@@ -522,7 +522,10 @@ class MainWindow(QMainWindow):
             return
         e = self._modlist_model.entry(rows[0].row())
         from gui_qt.modlist_model import _BOUNDARY_NAMES
-        if e.is_separator or e.name in _BOUNDARY_NAMES:
+        # The synthetic Overwrite / Root Folder rows have a real on-disk folder,
+        # so they show their files in the Mod Files tab like a mod. Only true
+        # (user) separators show nothing.
+        if e.is_separator and e.name not in _BOUNDARY_NAMES:
             mv.show_mod(None)
         else:
             mv.show_mod(e.name)

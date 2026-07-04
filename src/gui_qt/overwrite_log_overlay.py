@@ -45,7 +45,8 @@ class OverwriteLogOverlay(QWidget):
     CARD_W = 640
     CARD_H = 520
 
-    def __init__(self, host: QWidget, sections: "list[tuple[str, list[str]]]"):
+    def __init__(self, host: QWidget, sections: "list[tuple[str, list[str]]]",
+                 title: "str | None" = None):
         super().__init__(host)
         self._host = host
         self._done = False
@@ -65,9 +66,10 @@ class OverwriteLogOverlay(QWidget):
         v.setSpacing(8)
 
         header = QHBoxLayout()
-        title = QLabel(self.tr("Files swept into Overwrite (newest restore first)"))
-        title.setStyleSheet(f"color:{_c(p,'TEXT_MAIN')}; font-weight:600; font-size:14px;")
-        header.addWidget(title)
+        title_lbl = QLabel(
+            title or self.tr("Files swept into Overwrite (newest restore first)"))
+        title_lbl.setStyleSheet(f"color:{_c(p,'TEXT_MAIN')}; font-weight:600; font-size:14px;")
+        header.addWidget(title_lbl)
         header.addStretch(1)
         close = QPushButton(self.tr("Close"))
         close.setObjectName("FormButton")
@@ -91,9 +93,9 @@ class OverwriteLogOverlay(QWidget):
         self.setFocus()
 
     @classmethod
-    def show_over(cls, host, sections):
+    def show_over(cls, host, sections, title=None):
         top = host.window() if host is not None else None
-        return cls(top or host, sections)
+        return cls(top or host, sections, title=title)
 
     @staticmethod
     def _render(sections, p) -> str:

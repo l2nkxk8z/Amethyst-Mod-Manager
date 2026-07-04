@@ -86,8 +86,11 @@ def _mod_dir_for(game, mod_name: str) -> Path | None:
     if game is None:
         return None
     try:
+        from Utils.filemap import ROOT_FOLDER_NAME
         if mod_name == OVERWRITE_NAME and hasattr(game, "get_effective_overwrite_path"):
             return Path(game.get_effective_overwrite_path())
+        if mod_name == ROOT_FOLDER_NAME and hasattr(game, "get_effective_root_folder_path"):
+            return Path(game.get_effective_root_folder_path())
         if hasattr(game, "get_effective_mod_staging_path"):
             return Path(game.get_effective_mod_staging_path()) / mod_name
     except Exception:
