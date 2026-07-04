@@ -106,6 +106,10 @@ Deploy to push the new load order to the game.</translation>
         <translation>New backup</translation>
     </message>
     <message>
+        <source>Rename</source>
+        <translation>Rename</translation>
+    </message>
+    <message>
         <source>Keep</source>
         <translation>Keep</translation>
     </message>
@@ -136,6 +140,14 @@ Deploy to push the new load order to the game.</translation>
     <message>
         <source>Unkeep</source>
         <translation>Unkeep</translation>
+    </message>
+    <message>
+        <source>Rename backup</source>
+        <translation>Rename backup</translation>
+    </message>
+    <message>
+        <source>Enter a name for this backup (leave blank to use the date).</source>
+        <translation>Enter a name for this backup (leave blank to use the date).</translation>
     </message>
 </context>
 <context>

@@ -21,9 +21,10 @@ from PySide6.QtWidgets import (
 )
 
 from gui_qt.theme_qt import active_palette, _c, danger_close_button
+from gui_qt.text_input_overlay import TextInputOverlay
 from Utils.profile_backup import (
     create_backup, list_backups, restore_backup, backup_stats,
-    is_backup_kept, set_backup_kept,
+    is_backup_kept, set_backup_kept, get_backup_label, set_backup_label,
 )
 
 # Human-friendly weekday + date + time, e.g. "Fri 04 Jul 2026 · 14:30".
@@ -97,6 +98,10 @@ class BackupRestoreView(QWidget):
         self._new_btn.clicked.connect(self._on_create)
         rh.addWidget(self._new_btn)
         rh.addStretch(1)
+        self._rename_btn = QPushButton(self.tr("Rename"))
+        self._rename_btn.setEnabled(False)
+        self._rename_btn.clicked.connect(self._on_rename)
+        rh.addWidget(self._rename_btn)
         self._keep_btn = QPushButton(self.tr("Keep"))
         self._keep_btn.setEnabled(False)
         self._keep_btn.clicked.connect(self._on_keep)
@@ -144,10 +149,12 @@ class BackupRestoreView(QWidget):
         g.setHorizontalSpacing(6)
         g.setVerticalSpacing(2)
 
-        # Row 0: date (left) + optional "Kept" badge (right).
-        date = QLabel(dt.strftime(_CARD_DATE_FMT))
-        date.setStyleSheet(f"color:{_c(p,'TEXT_MAIN')}; font-weight:600; font-size:13px;")
-        g.addWidget(date, 0, 0)
+        # Row 0: title (label if set, else date) + optional "Kept" badge.
+        label = get_backup_label(bdir)
+        date_str = dt.strftime(_CARD_DATE_FMT)
+        title = QLabel(label or date_str)
+        title.setStyleSheet(f"color:{_c(p,'TEXT_MAIN')}; font-weight:600; font-size:13px;")
+        g.addWidget(title, 0, 0)
         if kept:
             badge = QLabel(self.tr("Kept"))
             badge.setStyleSheet(
@@ -156,7 +163,15 @@ class BackupRestoreView(QWidget):
             g.addWidget(badge, 0, 1, Qt.AlignRight)
         g.setColumnStretch(0, 1)
 
-        # Row 1: stats summary line.
+        # Row 1: date subline — only when a label has taken the title's place.
+        row = 1
+        if label:
+            sub = QLabel(date_str)
+            sub.setStyleSheet(f"color:{_c(p,'TEXT_DIM')}; font-size:11px;")
+            g.addWidget(sub, row, 0, 1, 2)
+            row += 1
+
+        # Next row: stats summary line.
         mods = self.tr("{0} mods ({1} enabled)").format(
             stats["mods_total"], stats["mods_enabled"])
         parts = [mods, self.tr("{0} plugins").format(stats["plugins"])]
@@ -164,7 +179,7 @@ class BackupRestoreView(QWidget):
             parts.append(self.tr("{0} separators").format(stats["separators"]))
         stat = QLabel("   •   ".join(parts))
         stat.setStyleSheet(f"color:{_c(p,'TEXT_DIM')}; font-size:11px;")
-        g.addWidget(stat, 1, 0, 1, 2)
+        g.addWidget(stat, row, 0, 1, 2)
         return card
 
     def _selected_index(self) -> int:
@@ -176,6 +191,7 @@ class BackupRestoreView(QWidget):
         has_sel = 0 <= idx < len(self._backups)
         self._restore_btn.setEnabled(has_sel)
         self._keep_btn.setEnabled(has_sel)
+        self._rename_btn.setEnabled(has_sel)
         if has_sel:
             _dt, bdir = self._backups[idx]
             self._keep_btn.setText(self.tr("Unkeep") if is_backup_kept(bdir) else self.tr("Keep"))
@@ -197,6 +213,28 @@ class BackupRestoreView(QWidget):
         set_backup_kept(bdir, not is_backup_kept(bdir))
         self._reload_list()
         self._list.setCurrentRow(idx)
+
+    def _on_rename(self):
+        idx = self._selected_index()
+        if not (0 <= idx < len(self._backups)):
+            return
+        _dt, bdir = self._backups[idx]
+
+        def _done(text):
+            if text is None:
+                return
+            set_backup_label(bdir, text)
+            self._reload_list()
+            self._list.setCurrentRow(idx)
+
+        TextInputOverlay.show_over(
+            self,
+            self.tr("Rename backup"),
+            self.tr("Enter a name for this backup (leave blank to use the date)."),
+            _done,
+            initial=get_backup_label(bdir),
+            ok_label=self.tr("Rename"),
+        )
 
     def _on_restore(self):
         idx = self._selected_index()

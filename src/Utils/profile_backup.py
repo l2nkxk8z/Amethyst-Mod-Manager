@@ -67,6 +67,34 @@ def set_backup_kept(backup_dir: Path, keep: bool) -> None:
         marker.unlink()
 
 
+_LABEL_MARKER = ".label"
+
+
+def get_backup_label(backup_dir: Path) -> str:
+    """Return the user-given label for this backup, or "" if none set.
+
+    Stored in a ``.label`` marker file alongside the backup so the folder name
+    stays a parseable timestamp (used for sorting and pruning).
+    """
+    marker = backup_dir / _LABEL_MARKER
+    if not marker.is_file():
+        return ""
+    try:
+        return marker.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def set_backup_label(backup_dir: Path, label: str) -> None:
+    """Set (or clear, when blank) the user-given label for this backup."""
+    marker = backup_dir / _LABEL_MARKER
+    label = (label or "").strip()
+    if label:
+        marker.write_text(label, encoding="utf-8")
+    elif marker.is_file():
+        marker.unlink()
+
+
 def create_backup(profile_dir: Path, log_fn=None) -> None:
     """
     Create a new backup in profile_dir/backups/<timestamp>/ containing
