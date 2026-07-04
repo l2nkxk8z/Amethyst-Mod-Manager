@@ -15,21 +15,19 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QAbstractItemView,
 )
 
 from gui_qt.theme_qt import active_palette, _c, danger_close_button
 from Utils.profile_backup import (
-    create_backup, list_backups, restore_backup,
+    create_backup, list_backups, restore_backup, backup_stats,
     is_backup_kept, set_backup_kept,
 )
 
-# Exact Tk highlight colours (backup_restore_dialog.py) — kept for parity.
-_KEEP_BG = QColor("#1a3a1a")
-_KEEP_FG = QColor("#6ecf6e")
+# Human-friendly weekday + date + time, e.g. "Fri 04 Jul 2026 · 14:30".
+_CARD_DATE_FMT = "%a %d %b %Y  ·  %H:%M"
 
 
 class BackupRestoreView(QWidget):
@@ -74,9 +72,14 @@ class BackupRestoreView(QWidget):
         info.setStyleSheet(f"color:{_c(p,'TEXT_DIM')}; padding:8px 12px 4px 12px;")
         v.addWidget(info)
 
-        # Backup list.
+        # Backup list — rows carry a rich card widget (see _make_card).
         self._list = QListWidget()
         self._list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._list.setSpacing(6)
+        self._list.setStyleSheet(
+            f"QListWidget {{ background:{_c(p,'BG_DEEP')}; border:none; padding:6px; }}"
+            "QListWidget::item { border:none; }"
+        )
         self._list.itemSelectionChanged.connect(self._on_selection)
         v.addWidget(self._list, 1)
 
@@ -112,19 +115,57 @@ class BackupRestoreView(QWidget):
         self._backups = list_backups(self._profile_dir)
         self._list.clear()
         for dt, bdir in self._backups:
-            label = dt.strftime("%Y-%m-%d %H:%M:%S")
-            kept = is_backup_kept(bdir)
-            if kept:
-                label += "  [kept]"
-            item = QListWidgetItem(label)
-            if kept:
-                item.setBackground(_KEEP_BG)
-                item.setForeground(_KEEP_FG)
+            item = QListWidgetItem()
+            card = self._make_card(dt, bdir)
+            item.setSizeHint(card.sizeHint())
             self._list.addItem(item)
+            self._list.setItemWidget(item, card)
         has_any = bool(self._backups)
         self._list.setVisible(has_any)
         self._empty.setVisible(not has_any)
         self._on_selection()
+
+    def _make_card(self, dt, bdir) -> QWidget:
+        """Build a summary card for one backup: date + mod/plugin counts."""
+        p = active_palette()
+        kept = is_backup_kept(bdir)
+        stats = backup_stats(bdir)
+
+        card = QWidget()
+        accent = _c(p, 'ACCENT') if kept else _c(p, 'BORDER')
+        card.setStyleSheet(
+            f"QWidget#bcard {{ background:{_c(p,'BG_PANEL')};"
+            f" border:1px solid {_c(p,'BORDER')};"
+            f" border-left:3px solid {accent}; border-radius:6px; }}"
+        )
+        card.setObjectName("bcard")
+        g = QGridLayout(card)
+        g.setContentsMargins(12, 8, 12, 8)
+        g.setHorizontalSpacing(6)
+        g.setVerticalSpacing(2)
+
+        # Row 0: date (left) + optional "Kept" badge (right).
+        date = QLabel(dt.strftime(_CARD_DATE_FMT))
+        date.setStyleSheet(f"color:{_c(p,'TEXT_MAIN')}; font-weight:600; font-size:13px;")
+        g.addWidget(date, 0, 0)
+        if kept:
+            badge = QLabel(self.tr("Kept"))
+            badge.setStyleSheet(
+                f"color:{_c(p,'TEXT_ON_ACCENT')}; background:{_c(p,'ACCENT')};"
+                " border-radius:4px; padding:1px 8px; font-size:10px; font-weight:600;")
+            g.addWidget(badge, 0, 1, Qt.AlignRight)
+        g.setColumnStretch(0, 1)
+
+        # Row 1: stats summary line.
+        mods = self.tr("{0} mods ({1} enabled)").format(
+            stats["mods_total"], stats["mods_enabled"])
+        parts = [mods, self.tr("{0} plugins").format(stats["plugins"])]
+        if stats["separators"]:
+            parts.append(self.tr("{0} separators").format(stats["separators"]))
+        stat = QLabel("   •   ".join(parts))
+        stat.setStyleSheet(f"color:{_c(p,'TEXT_DIM')}; font-size:11px;")
+        g.addWidget(stat, 1, 0, 1, 2)
+        return card
 
     def _selected_index(self) -> int:
         return self._list.currentRow() if self._backups else -1

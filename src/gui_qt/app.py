@@ -7719,13 +7719,20 @@ class MainWindow(QMainWindow):
         self._log_toggle.clicked.connect(self._toggle_log)
         h.addWidget(self._log_toggle)
 
-        # These only show when the log is open.
+        # These only show when the log is open. The Error/Warning entries are
+        # clickable toggles: clicking one filters the log to show only lines of
+        # that severity (both off = show everything, Tk feel).
+        self._show_errors = True
+        self._show_warnings = True
         self._errors_lbl = QLabel(self.tr("● Errors"))
-        self._errors_lbl.setStyleSheet(f"color:{_c(self._pal,'TEXT_ERR')};")
+        self._errors_lbl.setCursor(Qt.PointingHandCursor)
+        self._errors_lbl.mousePressEvent = lambda e: self._toggle_log_filter("error")
         h.addWidget(self._errors_lbl)
         self._warnings_lbl = QLabel(self.tr("● Warnings"))
-        self._warnings_lbl.setStyleSheet(f"color:{_c(self._pal,'TEXT_WARN')};")
+        self._warnings_lbl.setCursor(Qt.PointingHandCursor)
+        self._warnings_lbl.mousePressEvent = lambda e: self._toggle_log_filter("warning")
         h.addWidget(self._warnings_lbl)
+        self._refresh_log_filter_labels()
         self._open_log_tab_btn = self._text_button(self.tr("Open as tab"), compact=True)
         self._open_log_tab_btn.clicked.connect(self._open_log_tab)
         h.addWidget(self._open_log_tab_btn)
@@ -7786,6 +7793,43 @@ class MainWindow(QMainWindow):
         for w in self._log_open_widgets:
             w.setVisible(open_)
 
+    @staticmethod
+    def _classify_log_line(line: str) -> str:
+        """Return the severity of a log line: 'error', 'warning' or ''.
+
+        Free-form backend messages are classified by keyword so error lines can
+        render red and warnings yellow."""
+        low = line.lower()
+        if any(k in low for k in
+               ("error", "failed", "failure", "fatal", "exception",
+                "traceback", "[err]", "could not", "cannot ", "can't")):
+            return "error"
+        if any(k in low for k in ("warn", "[warning]", "deprecat")):
+            return "warning"
+        return ""
+
+    def _log_line_html(self, line: str, severity: str) -> str:
+        """Escaped, colour-tinted HTML for a single log line."""
+        from html import escape
+        text = escape(line) or "&nbsp;"
+        if severity == "error":
+            color = _c(self._pal, "TEXT_ERR")
+        elif severity == "warning":
+            color = _c(self._pal, "TEXT_WARN")
+        else:
+            return f"<div>{text}</div>"
+        return f'<div style="color:{color};">{text}</div>'
+
+    def _line_visible(self, severity: str) -> bool:
+        """Whether a line of this severity passes the current Error/Warning
+        toggle filter. Filters only hide when at least one is disabled; both
+        enabled shows everything (Tk feel)."""
+        if severity == "error":
+            return self._show_errors
+        if severity == "warning":
+            return self._show_warnings
+        return True   # plain lines always show
+
     def _append_log(self, message: str):
         """Backend log_fn target — append a line to the log text area.
 
@@ -7793,7 +7837,10 @@ class MainWindow(QMainWindow):
         collection detail/reset, installs …). Qt widgets may ONLY be touched on
         the GUI thread — touching ``_log_view`` from a worker is a data race that
         can segfault — so when called off-thread we marshal through the queued
-        ``_op_log`` signal instead of writing the widget directly."""
+        ``_op_log`` signal instead of writing the widget directly.
+
+        Lines are also retained (with their severity) in ``_log_lines`` so the
+        Error/Warning toggles can re-render a filtered view."""
         try:
             from PySide6.QtCore import QThread
             if QThread.currentThread() is not self.thread():
@@ -7802,28 +7849,70 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
         line = str(message).rstrip("\n")
-        try:
-            self._log_view.appendPlainText(line)
-        except Exception:
-            pass
-        # Mirror into the full-screen log tab if it is open.
-        tab_view = getattr(self, "_log_tab_view", None)
-        if tab_view is not None:
+        severity = self._classify_log_line(line)
+        if not hasattr(self, "_log_lines"):
+            self._log_lines = []
+        self._log_lines.append((line, severity))
+        if not self._line_visible(severity):
+            return   # filtered out — retained but not shown
+        html = self._log_line_html(line, severity)
+        for view in (self._log_view, getattr(self, "_log_tab_view", None)):
+            if view is None:
+                continue
             try:
-                tab_view.appendPlainText(line)
+                view.appendHtml(html)
             except Exception:
                 pass
 
+    def _render_log(self):
+        """Re-render both log views from ``_log_lines`` honouring the current
+        Error/Warning filter toggles."""
+        lines = getattr(self, "_log_lines", [])
+        html = "".join(
+            self._log_line_html(text, sev)
+            for text, sev in lines if self._line_visible(sev)
+        )
+        for view in (self._log_view, getattr(self, "_log_tab_view", None)):
+            if view is None:
+                continue
+            try:
+                view.clear()
+                if html:
+                    view.appendHtml(html)
+                view.moveCursor(QTextCursor.End)
+            except Exception:
+                pass
+
+    def _toggle_log_filter(self, which: str):
+        """Flip an Error/Warning filter toggle and re-render the log."""
+        if which == "error":
+            self._show_errors = not self._show_errors
+        elif which == "warning":
+            self._show_warnings = not self._show_warnings
+        self._refresh_log_filter_labels()
+        self._render_log()
+
+    def _refresh_log_filter_labels(self):
+        """Colour the filter labels; dim (strike-through) when their filter is
+        off so it reads as an active toggle."""
+        err_on = getattr(self, "_show_errors", True)
+        warn_on = getattr(self, "_show_warnings", True)
+        dim = _c(self._pal, "TEXT_DIM")
+        self._errors_lbl.setStyleSheet(
+            f"color:{_c(self._pal,'TEXT_ERR')};" if err_on
+            else f"color:{dim}; text-decoration:line-through;")
+        self._warnings_lbl.setStyleSheet(
+            f"color:{_c(self._pal,'TEXT_WARN')};" if warn_on
+            else f"color:{dim}; text-decoration:line-through;")
+
     def _clear_log(self):
         """Clear both the docked log view and the full-screen log tab (if open)."""
-        try:
-            self._log_view.clear()
-        except Exception:
-            pass
-        tab_view = getattr(self, "_log_tab_view", None)
-        if tab_view is not None:
+        self._log_lines = []
+        for view in (self._log_view, getattr(self, "_log_tab_view", None)):
+            if view is None:
+                continue
             try:
-                tab_view.clear()
+                view.clear()
             except Exception:
                 pass
 
@@ -7836,10 +7925,12 @@ class MainWindow(QMainWindow):
         view = QPlainTextEdit()
         view.setReadOnly(True)
         view.setObjectName("LogView")
-        # Seed with the existing log contents.
-        view.setPlainText(self._log_view.toPlainText())
-        view.moveCursor(QTextCursor.End)
         self._log_tab_view = view
+        # Seed with the existing (filtered, colour-tinted) log contents.
+        for text, sev in getattr(self, "_log_lines", []):
+            if self._line_visible(sev):
+                view.appendHtml(self._log_line_html(text, sev))
+        view.moveCursor(QTextCursor.End)
         view.destroyed.connect(
             lambda *_: setattr(self, "_log_tab_view", None))
         self._tabs.open_tab(view, self.tr("Log"), key="log")

@@ -18,6 +18,7 @@ _TIMESTAMP_FMT = "%Y%m%d_%H%M%S"
 _MAX_BACKUPS = 20
 _BACKUPS_SUBDIR = "backups"
 _TIMESTAMP_PATTERN = re.compile(r"^\d{8}_\d{6}$")
+_SEPARATOR_SUFFIX = "_separator"
 
 # Files to backup/restore (in profile dir). Copy only if present.
 _BACKUP_FILES = [
@@ -130,6 +131,52 @@ def list_backups(profile_dir: Path) -> list[tuple[datetime, Path]]:
             result.append((dt, p))
     result.sort(key=lambda x: x[0], reverse=True)
     return result
+
+
+def backup_stats(backup_dir: Path) -> dict:
+    """Summarise a backup folder's contents for display in the restore UI.
+
+    Returns a dict with:
+      - mods_total / mods_enabled: real mods in modlist.txt (separators excluded)
+      - separators: number of separator entries
+      - plugins: number of plugin entries in plugins.txt (comments excluded)
+
+    Counting is tolerant of missing files (returns 0 for that section) so it
+    can be called on any backup, including legacy ones.
+    """
+    mods_total = mods_enabled = separators = plugins = 0
+
+    modlist = backup_dir / "modlist.txt"
+    if modlist.is_file():
+        for line in modlist.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            prefix, name = line[0], line[1:]
+            if prefix not in "+-*" or not name:
+                continue
+            if name.endswith(_SEPARATOR_SUFFIX):
+                separators += 1
+                continue
+            mods_total += 1
+            # '+' and '*' are enabled; '-' is disabled (non-separator).
+            if prefix in "+*":
+                mods_enabled += 1
+
+    plugins_txt = backup_dir / "plugins.txt"
+    if plugins_txt.is_file():
+        for line in plugins_txt.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            plugins += 1
+
+    return {
+        "mods_total": mods_total,
+        "mods_enabled": mods_enabled,
+        "separators": separators,
+        "plugins": plugins,
+    }
 
 
 def restore_backup(profile_dir: Path, backup_dir: Path) -> None:
