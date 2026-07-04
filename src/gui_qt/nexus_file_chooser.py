@@ -45,15 +45,19 @@ class NexusFileChooser(QWidget):
         self._done = False
         p = active_palette()
 
-        # Full-host dimmed backdrop (absorbs clicks → cancel).
-        self.setStyleSheet("background: rgba(0,0,0,140);")
+        # Full-host dimmed backdrop (absorbs clicks → cancel). Scope the
+        # stylesheet to this widget's objectName so the semi-transparent black
+        # does NOT cascade into the card's child labels (which would paint a
+        # black band behind the text).
+        self.setObjectName("OverlayBackdrop")
+        self.setStyleSheet("#OverlayBackdrop { background: rgba(0,0,0,150); }")
         self.setGeometry(host.rect())
 
         # Centered card.
         self._card = QFrame(self)
-        self._card.setObjectName("HeaderBar")
+        self._card.setObjectName("_FileChooserCard")
         self._card.setStyleSheet(
-            f"#HeaderBar {{ background:{_c(p,'BG_DEEP')};"
+            f"#_FileChooserCard {{ background:{_c(p,'BG_PANEL')};"
             f" border:1px solid {_c(p,'BORDER')}; border-radius:8px; }}")
         v = QVBoxLayout(self._card)
         v.setContentsMargins(16, 14, 16, 14)
@@ -71,9 +75,12 @@ class NexusFileChooser(QWidget):
         self._list = QListWidget()
         self._list.setAlternatingRowColors(True)
         self._list.setStyleSheet(
-            f"QListWidget {{ font-size:14px; }}"
-            f"QListWidget::item {{ padding:8px 6px;"
-            f" border-bottom:1px solid {_c(p,'BORDER')}; }}")
+            f"QListWidget {{ font-size:14px; background:{_c(p,'BG_LIST')};"
+            f" border:1px solid {_c(p,'BORDER')}; border-radius:6px; }}"
+            f"QListWidget::item {{ padding:8px 6px; color:{_c(p,'TEXT_MAIN')};"
+            f" border-bottom:1px solid {_c(p,'BORDER')}; }}"
+            f"QListWidget::item:selected {{ background:{_c(p,'BG_SELECT')};"
+            f" color:{_c(p,'TEXT_ON_ACCENT')}; }}")
         for f in files:
             name = f.name or f.file_name or f"File {f.file_id}"
             size = (f.size_in_bytes or 0) or (f.size_kb * 1024 if f.size_kb else 0)
@@ -94,11 +101,12 @@ class NexusFileChooser(QWidget):
         bar = QHBoxLayout()
         bar.addStretch(1)
         cancel = QPushButton(self.tr("Cancel"))
+        cancel.setObjectName("FormButton")
         cancel.setCursor(Qt.PointingHandCursor)
         cancel.clicked.connect(lambda: self._finish(None))
         bar.addWidget(cancel)
         install = QPushButton(self.tr("Install"))
-        install.setObjectName("GameSelectBtn")    # green, matches the cards
+        install.setObjectName("PrimaryButton")    # blue accent, matches other overlays
         install.setCursor(Qt.PointingHandCursor)
         install.clicked.connect(self._pick)
         bar.addWidget(install)
