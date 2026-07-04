@@ -5103,8 +5103,25 @@ class MainWindow(QMainWindow):
             tools = []
         if not tools:
             menu.addAction(self.tr("No wizard tools for this game")).setEnabled(False)
-            self._add_prefix_manager_action(menu)
+            self._add_prefix_manager_action(menu, tools)
             return
+        # Favourites submenu at the top — quick launch for pinned tools.
+        from Utils.ui_config import load_favourite_wizards
+        fav_ids = load_favourite_wizards()
+        fav_tools = [t for t in tools if t.id in fav_ids]
+        if fav_tools:
+            fav_menu = menu.addMenu(self.tr("★ Favourites"))
+            fav_menu.setToolTipsVisible(True)
+            for tool in fav_tools:
+                act = fav_menu.addAction(tool.label)
+                if tool.description:
+                    act.setToolTip(tool.description)
+                if get_spec(tool.dialog_class_path) is None:
+                    act.setEnabled(False)   # not ported to Qt yet
+                else:
+                    act.triggered.connect(
+                        lambda _=False, t=tool: self._open_wizard_tool(t))
+            menu.addSeparator()
         groups = group_by_category(tools)
         for cat, cat_tools in groups:
             target = menu if len(groups) == 1 else menu.addMenu(cat)
@@ -5118,16 +5135,48 @@ class MainWindow(QMainWindow):
                 else:
                     act.triggered.connect(
                         lambda _=False, t=tool: self._open_wizard_tool(t))
-        self._add_prefix_manager_action(menu)
+        self._add_prefix_manager_action(menu, tools)
 
-    def _add_prefix_manager_action(self, menu):
-        """Trailing 'Manage Prefixes…' entry — always available (it lists
-        every game's tool prefixes, like the Tk wizard picker's button)."""
+    def _add_prefix_manager_action(self, menu, tools=None):
+        """Trailing 'Add Favourites…' + 'Manage Prefixes…' entries. The prefix
+        manager is always available (it lists every game's tool prefixes, like
+        the Tk wizard picker's button); 'Add Favourites…' is only shown when the
+        current game has tools to favourite."""
         menu.addSeparator()
+        if tools:
+            fav = menu.addAction(self.tr("Add Favourites…"))
+            fav.setToolTip(self.tr("Choose which wizard tools appear at the top of "
+                           "this menu for quick access."))
+            fav.triggered.connect(
+                lambda _=False, t=list(tools): self._open_favourite_wizards(t))
         act = menu.addAction(self.tr("Manage Prefixes…"))
         act.setToolTip(self.tr("Browse every wizard-tool Wine prefix and delete them "
                        "to reclaim disk space."))
         act.triggered.connect(lambda _=False: self._open_prefix_manager())
+
+    def _open_favourite_wizards(self, tools):
+        """Open the borderless favourites picker for the given wizard *tools*.
+        Saving replaces the global favourites set; the Wizard menu rebuilds its
+        Favourites submenu on next open."""
+        from gui_qt.favourite_wizards_overlay import FavouriteWizardsOverlay
+        from Utils.ui_config import load_favourite_wizards, save_favourite_wizards
+        # Only offer tools that are actually openable (ported to Qt).
+        from wizards_qt import get_spec
+        items = [(t.label, t.id) for t in tools
+                 if get_spec(t.dialog_class_path) is not None]
+        if not items:
+            return
+
+        def _done(chosen):
+            if chosen is None:
+                return
+            try:
+                save_favourite_wizards(chosen)
+            except Exception as exc:
+                self._append_log(f"Wizards: failed to save favourites: {exc}")
+
+        FavouriteWizardsOverlay.show_over(
+            self, items, load_favourite_wizards(), _done)
 
     def _open_prefix_manager(self):
         """Open the prefix manager as a plugins-panel-scoped tab."""

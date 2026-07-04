@@ -1025,6 +1025,46 @@ def save_allow_prerelease(value: bool) -> None:
         parser.write(f)
 
 
+# ---------------------------------------------------------------------------
+# Favourite wizard tools (global, shown at the top of the Wizard header menu)
+# ---------------------------------------------------------------------------
+# Stored as one key per favourited tool id under [wizard_favourites] (value is
+# ignored, presence = favourited). Global across games — a tool id is unique
+# per tool, and the Wizard menu only lists tools applicable to the active game
+# anyway, so unrelated ids simply never match.
+_WIZARD_FAV_SECTION = "wizard_favourites"
+
+
+def load_favourite_wizards() -> set[str]:
+    """Return the set of favourited wizard-tool ids (empty if none/unset)."""
+    path = get_ui_config_path()
+    if not path.is_file():
+        return set()
+    try:
+        parser = _new_parser()
+        parser.read(path)
+        if _WIZARD_FAV_SECTION not in parser:
+            return set()
+        return {k for k, v in parser[_WIZARD_FAV_SECTION].items()
+                if str(v).strip().lower() in ("1", "true", "yes", "on", "")}
+    except Exception:
+        return set()
+
+
+def save_favourite_wizards(tool_ids) -> None:
+    """Persist the set of favourited wizard-tool ids under [wizard_favourites],
+    replacing any previous contents."""
+    path = get_ui_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    parser = _new_parser()
+    if path.is_file():
+        parser.read(path)
+    # Rewrite the section from scratch so unchecked tools are dropped.
+    parser[_WIZARD_FAV_SECTION] = {tid: "true" for tid in sorted(set(tool_ids))}
+    with path.open("w", encoding="utf-8") as f:
+        parser.write(f)
+
+
 def load_clear_archive_after_install() -> bool:
     """Return the clear_archive_after_install setting (default True)."""
     path = get_ui_config_path()
