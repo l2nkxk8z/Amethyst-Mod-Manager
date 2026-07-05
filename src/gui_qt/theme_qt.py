@@ -570,9 +570,14 @@ def _resolve_base_style(p: dict):
     from PySide6.QtWidgets import QStyleFactory
     keys = {k.lower(): k for k in QStyleFactory.keys()}
     wanted = str(p.get("BASE_QSTYLE", "") or "").lower()
+    # Default to Fusion (what the QSS was authored against) rather than any
+    # system style. On the flatpak/Steam Deck a Breeze plugin is present and
+    # would otherwise win, but Breeze draws its own QTabBar baseline/shape that
+    # the QSS can't fully suppress (the stray white underline under the tabs).
+    # Only honour Breeze when a theme opts in explicitly via BASE_QSTYLE.
     pick = (keys.get(wanted)
-            or keys.get("breeze")
             or keys.get("fusion")
+            or keys.get("breeze")
             or (QStyleFactory.keys()[0] if QStyleFactory.keys() else None))
     return QStyleFactory.create(pick) if pick else None
 
