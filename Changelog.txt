@@ -2,6 +2,7 @@
 ## UI Rework
 - Complete rework of the user interface from scratch in QT
 - Overlays now open as tabs that can be switched between and undocked
+- Tabs can be right clicked and repinned to a different location
 - Added localisation support and several languages (Translated via the deepl api)
 - Better theme support
 - Hovering over progress bars or notifications will hide them so buttons don't get blocked by them
