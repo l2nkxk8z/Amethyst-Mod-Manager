@@ -107,8 +107,12 @@ modules:
   - name: cabextract
     buildsystem: autotools
     sources:
+      # cabextract.org.uk 403s CI runners; Debian ships the byte-identical
+      # upstream tarball (same sha256), so pull from their pool instead.
       - type: archive
-        url: https://www.cabextract.org.uk/cabextract-1.11.tar.gz
+        url: http://deb.debian.org/debian/pool/main/c/cabextract/cabextract_1.11.orig.tar.gz
+        mirror-urls:
+          - https://www.cabextract.org.uk/cabextract-1.11.tar.gz
         sha256: b5546db1155e4c718ff3d4b278573604f30dd64c3c5bfd4657cd089b823a3ac6
 
   - name: amethyst-mod-manager
