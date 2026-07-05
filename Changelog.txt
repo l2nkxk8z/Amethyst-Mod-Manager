@@ -20,6 +20,7 @@
 - Removed the Archive tab. Clicking a bsa/ba2 file in the mod files tab will now display it's content
 - Skyrim AE cc plugins are now added to plugins.txt
 - Added Pragmata support
+- Changed the default mod staging folder to home/games/Amethyst to prevent issues in the flatpak
 
 - v1.3.13
 - Runtime generated files that appear in a games root folder are now rescued and sent to the profiles root folder (the root folder separator)

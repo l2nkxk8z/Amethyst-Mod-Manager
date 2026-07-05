@@ -482,15 +482,7 @@ class ConfigureGameView(QWidget):
             self._set_check("profile_saves", False)
             self._set_check("prefix_numbering", True)
             self._select_plugins_txt_default()
-            try:
-                from Utils.ui_config import load_default_staging_path
-                root = load_default_staging_path()
-                if root:
-                    self._staging_edit.setText(str(Path(root) / g.name))
-                else:
-                    self._staging_edit.setText(str(g.get_mod_staging_path()))
-            except Exception:
-                self._staging_edit.setText(str(g.get_mod_staging_path()))
+            self._seed_default_staging(g)
             self._start_game_scan()
 
     def _set_check(self, key, value):
@@ -691,17 +683,38 @@ class ConfigureGameView(QWidget):
             except Exception:
                 pass
 
-    def _reset_staging(self):
-        self._custom_staging = None
+    def _seed_default_staging(self, g):
+        """Seed the staging field + _custom_staging with the preferred default.
+
+        Priority: the user's Settings default_staging_path (if set), else the
+        built-in ~/Games/Amethyst/<game> — a per-game *root* that keeps mods
+        beside the game install on the same filesystem (hardlink-friendly),
+        avoiding the Flatpak ~/.var/app cross-mount that forced symlink deploys.
+        We set _custom_staging (the value save persists) — not just the display
+        text — so the seeded default actually takes effect on save.
+        """
         try:
-            # Reset clears any custom override → default location.
-            if hasattr(self._game, "_staging_path"):
-                default = self._game.get_mod_staging_path()
-            else:
-                default = self._game.get_mod_staging_path()
+            from Utils.ui_config import load_default_staging_path
+            from Utils.config_paths import get_default_game_staging_root
+            user_root = (load_default_staging_path() or "").strip()
+            root = Path(user_root) / g.name if user_root \
+                else get_default_game_staging_root(g.name)
         except Exception:
-            default = self._game.get_mod_staging_path()
-        self._staging_edit.setText(str(default))
+            self._custom_staging = None
+            self._staging_edit.setText(str(g.get_mod_staging_path()))
+            return
+        # _staging_path is the game-root; the backend appends "mods" for the
+        # staging path and puts profiles/overwrite/filemap alongside it.  The
+        # field shows the *root* to match the browse/pick/typed convention
+        # (_on_staging_picked / _on_staging_typed store the field text verbatim
+        # as the root), so the seeded value round-trips through a manual edit.
+        self._custom_staging = root
+        self._staging_edit.setText(str(root))
+
+    def _reset_staging(self):
+        # Reset re-seeds the preferred default rather than clearing to the legacy
+        # <config>/Profiles location (which the screenshot showed sticking).
+        self._seed_default_staging(self._game)
         self._staging_status.setText(self.tr("Default location will be used."))
         self._staging_status.setStyleSheet(f"color:{self._c('TEXT_DIM')};")
 
