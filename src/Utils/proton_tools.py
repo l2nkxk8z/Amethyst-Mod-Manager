@@ -172,7 +172,8 @@ def resolve_proton_env(game, log_fn: LogFn = _noop):
         log_fn("Proton Tools: could not determine Steam root for the selected Proton tool.")
         return None, None
 
-    env = os.environ.copy()
+    from Utils.protontricks import strip_appimage_env
+    env = strip_appimage_env(os.environ.copy())
     env["STEAM_COMPAT_DATA_PATH"] = str(compat_data)
     env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = str(steam_root)
     game_path = game.get_game_path() if hasattr(game, "get_game_path") else None
@@ -289,8 +290,9 @@ def launch_winetricks(game, log_fn: LogFn = _noop) -> None:
         log_fn("Proton Tools: cabextract not found — downloading a portable copy …")
         if not install_cabextract(log_fn=lambda m: log_fn(f"Proton Tools: {m}")):
             return
+    from Utils.protontricks import strip_appimage_env
     wt = _bundled_winetricks()
-    env = os.environ.copy()
+    env = strip_appimage_env(os.environ.copy())
     env["WINEPREFIX"] = str(prefix_path)
     path_prefix = str(wt.parent)
     proton_bin = _get_proton_bin()

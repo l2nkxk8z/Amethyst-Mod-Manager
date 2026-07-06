@@ -20,6 +20,40 @@ from typing import Callable
 
 from Utils.app_log import safe_log as _safe_log
 
+# Env vars the AppImage runtime injects to isolate the bundle's own libraries.
+# They point into the (transient) FUSE mount, so a Proton subprocess that
+# inherits them loads the AppImage's bundled Python/libs and its blocked
+# LD_LIBRARY_PATH sentinel instead of the host's — which breaks Proton's
+# startup Vulkan probe (CDLL('libvulkan.so.1') fails to find the host lib).
+_APPIMAGE_ENV_PREFIXES = (
+    "APPDIR", "APPIMAGE", "OWD", "ARGV0",
+    "SSL_CERT_FILE", "SSL_CERT_DIR", "CURL_CA_BUNDLE",
+    "LD_LIBRARY_PATH", "LD_PRELOAD",
+    "PYTHONHOME", "PYTHONPATH",
+    "GDK_PIXBUF_MODULEDIR", "GDK_PIXBUF_MODULE_FILE",
+    "GIO_MODULE_DIR", "GSETTINGS_SCHEMA_DIR",
+    "GTK_PATH", "GTK_IM_MODULE_FILE",
+    "QT_PLUGIN_PATH", "QML2_IMPORT_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH",
+    "GCONV_PATH", "PERLLIB", "PERL5LIB",
+)
+
+
+def strip_appimage_env(env: dict) -> dict:
+    """Return *env* with AppImage-injected loader/bundle vars removed.
+
+    No-op outside the AppImage. When bundled, these vars point into the
+    AppImage's FUSE mount; passing them to a Proton subprocess makes it load
+    the bundle's libraries and its blocked LD_LIBRARY_PATH sentinel instead of
+    the host's, breaking Proton's Vulkan GPU probe on startup.
+    """
+    if not os.environ.get("APPDIR") and not os.environ.get("APPIMAGE"):
+        return env
+    return {
+        k: v for k, v in env.items()
+        if not any(k.startswith(p) for p in _APPIMAGE_ENV_PREFIXES)
+    }
+
+
 _WINETRICKS_URL = "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks"
 _CABEXTRACT_URL = "https://archlinux.org/packages/extra/x86_64/cabextract/download/"
 
@@ -261,7 +295,7 @@ def _install_via_winetricks(
 
     winetricks = str(_bundled_winetricks())
 
-    env = os.environ.copy()
+    env = strip_appimage_env(os.environ.copy())
     env["WINEPREFIX"] = str(prefix_path)
 
     path_prefix = str(_get_tools_dir())
@@ -461,7 +495,7 @@ def build_proton_env_for_game(game) -> "tuple[Path, dict] | tuple[None, None]":
     if steam_root is None:
         return None, None
 
-    env = os.environ.copy()
+    env = strip_appimage_env(os.environ.copy())
     env["STEAM_COMPAT_DATA_PATH"] = str(compat_data)
     env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = str(steam_root)
     game_path = game.get_game_path() if hasattr(game, "get_game_path") else None
