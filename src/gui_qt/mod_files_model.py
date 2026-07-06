@@ -141,12 +141,14 @@ class ModFilesModel(QAbstractItemModel):
 
         if role == Qt.ForegroundRole and col == COL_NAME:
             from PySide6.QtGui import QColor
+            from gui_qt.theme_qt import active_palette, _c
+            pal = active_palette()
             if node.synthetic or self._is_greyed(node):
-                return QColor("#7a7a7a")
+                return QColor(_c(pal, "FILE_DIM"))
             if node.conflict == 1:
-                return QColor("#108d00")
+                return QColor(_c(pal, "FILE_WIN"))
             if node.conflict == -1:
-                return QColor("#9a0e0e")
+                return QColor(_c(pal, "FILE_LOSE"))
         return None
 
     # ---- check-state helpers ---------------------------------------------

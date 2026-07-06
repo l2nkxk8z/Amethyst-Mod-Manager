@@ -25,9 +25,9 @@ class ModFilesDelegate(QStyledItemDelegate):
         self._view = view
         p = active_palette()
         self.c_text = QColor(_c(p, "TEXT_MAIN"))
-        self.c_dim = QColor("#7a7a7a")
-        self.c_win = QColor("#108d00")
-        self.c_lose = QColor("#9a0e0e")
+        self.c_dim = QColor(_c(p, "FILE_DIM"))
+        self.c_win = QColor(_c(p, "FILE_WIN"))
+        self.c_lose = QColor(_c(p, "FILE_LOSE"))
         self.c_border = QColor(_c(p, "BORDER_FAINT"))
         self.c_check = QColor(_c(p, "ACCENT"))
         self.c_check_off = QColor(_c(p, "BG_DEEP"))

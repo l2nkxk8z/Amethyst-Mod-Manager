@@ -1054,8 +1054,9 @@ class ModListView(QTreeView):
             if prev is None:
                 return
             y = self.visualRect(m.index(prev, 0)).bottom()
+        from gui_qt.theme_qt import active_palette, _c
         p = QPainter(self.viewport())
-        pen = QPen(QColor("#5aa9ff"))
+        pen = QPen(QColor(_c(active_palette(), "HIGHLIGHT_DRAG")))
         pen.setWidth(2)
         p.setPen(pen)
         p.drawLine(0, y, self.viewport().width(), y)

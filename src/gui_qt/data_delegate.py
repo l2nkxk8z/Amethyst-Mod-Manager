@@ -25,7 +25,7 @@ class DataDelegate(QStyledItemDelegate):
         p = active_palette()
         self.c_text = QColor(_c(p, "TEXT_MAIN"))
         self.c_dim = QColor(_c(p, "TEXT_DIM"))
-        self.c_win = QColor("#108d00")
+        self.c_win = QColor(_c(p, "FILE_WIN"))
         self.c_sel = QColor(_c(p, "BG_SELECT"))
 
     def paint(self, p, opt, index):

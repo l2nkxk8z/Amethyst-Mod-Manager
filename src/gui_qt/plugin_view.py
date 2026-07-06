@@ -88,9 +88,9 @@ class PluginDelegate(QStyledItemDelegate):
         self.c_ul_dot = QColor(_c(p, "TEXT_WHITE"))
         self.c_ul_dot_cycle = QColor(_c(p, "STATUS_BADGE_RED"))
         # Cross-panel highlight tints (exact Tk conflict colours).
-        self.c_hl_higher = QColor("#108d00")
-        self.c_hl_lower = QColor("#9a0e0e")
-        self.c_hl_anchor = QColor("#A45500")
+        self.c_hl_higher = QColor(_c(p, "FILE_WIN"))
+        self.c_hl_lower = QColor(_c(p, "FILE_LOSE"))
+        self.c_hl_anchor = QColor(_c(p, "FILE_ANCHOR"))
         # Masters of the selected plugin get their own green row tint (Tk
         # BG_GREEN_ROW), distinct from the conflict-higher green.
         self.c_hl_master = QColor(_c(p, "BG_GREEN_ROW"))
@@ -687,7 +687,8 @@ class PluginView(QTreeView):
                 return
             y = self.visualRect(m.index(prev, 0)).bottom()
         p = QPainter(self.viewport())
-        pen = QPen(QColor("#5aa9ff")); pen.setWidth(2); p.setPen(pen)
+        pen = QPen(QColor(_c(active_palette(), "HIGHLIGHT_DRAG")))
+        pen.setWidth(2); p.setPen(pen)
         p.drawLine(0, y, self.viewport().width(), y)
         p.end()
 

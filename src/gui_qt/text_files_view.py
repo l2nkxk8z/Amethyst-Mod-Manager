@@ -149,13 +149,55 @@ class TextFilesView(QWidget):
             q = self._search
             entries = [e for e in entries
                        if q in e[0].casefold() or q in e[1].casefold()]
+        # Preserve expand state across the model reset (keyed by the folder's
+        # name-chain, which is unique within the source→folder tree).
+        expanded = self._expanded_keys()
+        first_build = self._model.rowCount() == 0 and not expanded
         self._model.set_root(self._build_tree(entries))
         # When filtering (search/content), expand so matches are visible;
-        # otherwise start fully collapsed (including the top-level source nodes).
+        # otherwise restore what the user had open (start collapsed first time).
         if self._search or self._content_matches is not None:
             self._tree.expandAll()
-        else:
+        elif first_build:
             self._tree.collapseAll()
+        else:
+            self._restore_expanded(expanded)
+
+    def _node_key(self, node) -> tuple:
+        parts = []
+        n = node
+        while n is not None and n.parent is not None:
+            parts.append(n.name)
+            n = n.parent
+        return tuple(reversed(parts))
+
+    def _expanded_keys(self) -> set[tuple]:
+        from PySide6.QtCore import QModelIndex
+        out: set[tuple] = set()
+        m = self._model
+
+        def walk(parent_index):
+            for r in range(m.rowCount(parent_index)):
+                idx = m.index(r, 0, parent_index)
+                node = m.node(idx)
+                if node and node.is_dir and self._tree.isExpanded(idx):
+                    out.add(self._node_key(node))
+                walk(idx)
+        walk(QModelIndex())
+        return out
+
+    def _restore_expanded(self, keys: set[tuple]):
+        from PySide6.QtCore import QModelIndex
+        m = self._model
+
+        def walk(parent_index):
+            for r in range(m.rowCount(parent_index)):
+                idx = m.index(r, 0, parent_index)
+                node = m.node(idx)
+                if node and node.is_dir and self._node_key(node) in keys:
+                    self._tree.expand(idx)
+                walk(idx)
+        walk(QModelIndex())
 
     def _build_tree(self, entries) -> _TextNode:
         """Build a source → folder → file tree. Each source is a top-level node;

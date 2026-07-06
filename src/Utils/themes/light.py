@@ -180,4 +180,23 @@ PALETTE: dict[str, str | tuple] = {
 
     # Misc
     "LINK_BLUE":     "#0a5ad4",
+
+    # Plugin-cycle status rows (Show Cycle view)
+    "PLUGIN_CYCLE_ERR_BG":  "#6b3333",
+    "PLUGIN_CYCLE_ERR_FG":  "#ffd9d9",
+    "PLUGIN_CYCLE_OK_BG":   "#2f5d3a",
+    "PLUGIN_CYCLE_OK_FG":   "#dcf5dc",
+    "PLUGIN_CYCLE_WARN_BG": "#4a4320",
+    "PLUGIN_CYCLE_WARN_FG": "#f5e28a",
+    "PLUGIN_CYCLE_ANCHOR":  "#e89862",
+    "PLUGIN_CYCLE_LINK":    "#62b0e8",
+
+    # File conflict states (Data / Mod Files / plugin conflicts)
+    "FILE_WIN":      "#108d00",
+    "FILE_LOSE":     "#9a0e0e",
+    "FILE_DIM":      "#7a7a7a",
+    "FILE_ANCHOR":   "#A45500",
+
+    # Drag selection outline (modlist / plugins)
+    "HIGHLIGHT_DRAG": "#5aa9ff",
 }

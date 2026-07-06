@@ -273,7 +273,9 @@ class SettingsView(QWidget):
     def _build_theme(self, g):
         """Theme picker (formerly its own Appearance section). Takes effect on
         restart, like Language / UI Scale — selecting a new theme persists it and
-        offers a self-restart via the window's theme restart prompt."""
+        offers a self-restart via the window's theme restart prompt. The
+        "Edit / Create Theme…" button sits to the right of the dropdown (mirrors
+        the Language row's combo + sync button layout)."""
         try:
             from Utils.themes import load_display_names
             themes = load_display_names() or {"dark": "Dark"}
@@ -283,15 +285,43 @@ class SettingsView(QWidget):
             current = uc.get_appearance_mode()
         except Exception:
             current = "dark"
-        pairs = [(disp, tid) for tid, disp in themes.items()]
-        self._combo(g, self.tr("Theme"), pairs, current,
-                    self._on_theme_changed)
+
+        row = self._next_row(g)
+        g.addWidget(QLabel(self.tr("Theme")), row, 0)
+
+        combo = QComboBox()
+        no_wheel(combo)
+        values = [tid for tid in themes]
+        for tid, disp in themes.items():
+            combo.addItem(disp, tid)
+        if current in values:
+            combo.setCurrentIndex(values.index(current))
+        combo.currentIndexChanged.connect(
+            lambda i: self._on_theme_changed(values[i]))
+
+        edit_btn = QPushButton(self.tr("Edit / Create Theme…"))
+        edit_btn.setCursor(Qt.PointingHandCursor)
+        edit_btn.clicked.connect(self._open_theme_editor)
+
+        wrap = QHBoxLayout()
+        wrap.setContentsMargins(0, 0, 0, 0)
+        wrap.addWidget(combo)
+        wrap.addWidget(edit_btn)
+        wrap.addStretch(1)
+        holder = QWidget(); holder.setLayout(wrap)
+        g.addWidget(holder, row, 1)
 
     def _on_theme_changed(self, tid: str):
         """Persist the chosen theme, then offer a restart (same pattern as UI
         scale / language) so the new palette applies on a fresh launch."""
         self._safe_save(uc.save_appearance_mode, tid)
         self._prompt_restart("theme")
+
+    def _open_theme_editor(self):
+        """Open the full-screen theme editor tab via the main window."""
+        opener = getattr(self._window, "_open_theme_editor_tab", None)
+        if callable(opener):
+            opener()
 
     def _build_ui_scale(self, g):
         """Add the UI Scale row: an Auto checkbox + a 50–200% slider.

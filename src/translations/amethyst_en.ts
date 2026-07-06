@@ -2581,6 +2581,18 @@ The original exe is kept as {0}.</translation>
         <translation>Restart now</translation>
     </message>
     <message>
+        <source>Theme Editor</source>
+        <translation>Theme Editor</translation>
+    </message>
+    <message>
+        <source>Edit custom game…</source>
+        <translation>Edit custom game…</translation>
+    </message>
+    <message>
+        <source>Edit custom game</source>
+        <translation>Edit custom game</translation>
+    </message>
+    <message>
         <source>Restart to change UI scale?</source>
         <translation>Restart to change UI scale?</translation>
     </message>
@@ -5544,6 +5556,10 @@ Please restart the wizard and install Script Merger first.</translation>
         <translation>UI Scale</translation>
     </message>
     <message>
+        <source>Edit / Create Theme…</source>
+        <translation>Edit / Create Theme…</translation>
+    </message>
+    <message>
         <source>Show mod description tooltips</source>
         <translation>Show mod description tooltips</translation>
     </message>
@@ -6079,6 +6095,77 @@ Output is written directly into your mod list as the '{0}' mod.</translation>
     <message>
         <source>Game Data folder not found. Deploy first.</source>
         <translation>Game Data folder not found. Deploy first.</translation>
+    </message>
+</context>
+<context>
+    <name>ThemeEditorView</name>
+    <message>
+        <source>Theme Editor</source>
+        <translation>Theme Editor</translation>
+    </message>
+    <message>
+        <source>Start from:</source>
+        <translation>Start from:</translation>
+    </message>
+    <message>
+        <source>Advanced (show all colours)</source>
+        <translation>Advanced (show all colours)</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>Save</translation>
+    </message>
+    <message>
+        <source>Save As…</source>
+        <translation>Save As…</translation>
+    </message>
+    <message>
+        <source>Delete</source>
+        <translation>Delete</translation>
+    </message>
+    <message>
+        <source>Restart to apply</source>
+        <translation>Restart to apply</translation>
+    </message>
+    <message>
+        <source>✕ Close</source>
+        <translation>✕ Close</translation>
+    </message>
+    <message>
+        <source>Save As New…</source>
+        <translation>Save As New…</translation>
+    </message>
+    <message>
+        <source>Editing a base colour adjusts its hover/variants automatically. Tick Advanced to edit every colour individually. Use "Restart to apply" to save your theme and see it across the whole app.</source>
+        <translation>Editing a base colour adjusts its hover/variants automatically. Tick Advanced to edit every colour individually. Use "Restart to apply" to save your theme and see it across the whole app.</translation>
+    </message>
+    <message>
+        <source>Pick colour: {0}</source>
+        <translation>Pick colour: {0}</translation>
+    </message>
+    <message>
+        <source>Save Theme</source>
+        <translation>Save Theme</translation>
+    </message>
+    <message>
+        <source>Theme name:</source>
+        <translation>Theme name:</translation>
+    </message>
+    <message>
+        <source>Save failed</source>
+        <translation>Save failed</translation>
+    </message>
+    <message>
+        <source>{0} (edited)</source>
+        <translation>{0} (edited)</translation>
+    </message>
+    <message>
+        <source>Delete theme?</source>
+        <translation>Delete theme?</translation>
+    </message>
+    <message>
+        <source>Delete the custom theme "{0}"? This cannot be undone.</source>
+        <translation>Delete the custom theme "{0}"? This cannot be undone.</translation>
     </message>
 </context>
 <context>

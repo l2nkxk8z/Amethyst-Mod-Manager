@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, QModelIndex, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTreeView, QLabel, QAbstractItemView,
 )
@@ -172,6 +172,8 @@ class DataView(QWidget):
         return entries
 
     def _repopulate(self):
+        # Preserve expand state by path across the model reset.
+        expanded = self._expanded_paths()
         entries = self._resolved_entries()
         # Ext counts (pre-filter) for the filter panel.
         self._ext_counts = dtlogic.filetype_counts(entries)
@@ -211,6 +213,36 @@ class DataView(QWidget):
         self._model.set_root(root)
         if q:
             self._tree.expandAll()
+        else:
+            self._restore_expanded(expanded)
+
+    def _expanded_paths(self) -> set[str]:
+        out: set[str] = set()
+        m = self._model
+
+        def walk(parent_index):
+            for r in range(m.rowCount(parent_index)):
+                idx = m.index(r, 0, parent_index)
+                node = m.node(idx)
+                if node and node.is_dir and self._tree.isExpanded(idx) and node.path:
+                    out.add(node.path.lower())
+                walk(idx)
+        walk(QModelIndex())
+        return out
+
+    def _restore_expanded(self, paths: set[str]):
+        if not paths:
+            return
+        m = self._model
+
+        def walk(parent_index):
+            for r in range(m.rowCount(parent_index)):
+                idx = m.index(r, 0, parent_index)
+                node = m.node(idx)
+                if node and node.is_dir and node.path and node.path.lower() in paths:
+                    self._tree.expand(idx)
+                walk(idx)
+        walk(QModelIndex())
 
     def _update_label(self, entries):
         n_files = len(entries)

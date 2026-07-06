@@ -535,6 +535,8 @@ class MainWindow(QMainWindow):
             # instead of showing stale placeholder names.
             self._game_selector.set_items([], current=self.tr("Add game"))
         self._refresh_play_selector()
+        # The 'Edit custom game…' entry depends on the active game.
+        self._refresh_game_actions()
         profs = gs.profiles()
         if profs:
             self._profile_selector.set_items(profs, current=gs.profile)
@@ -704,6 +706,18 @@ class MainWindow(QMainWindow):
         view = SettingsView(self)
         self._tabs.open_scoped_tab(
             view, self.tr("Settings"), self._modlist_panel_stack, key="settings")
+
+    def _open_theme_editor_tab(self):
+        """Open the Theme Editor as a full-screen tab (its own key). Editing a
+        theme touches the whole window, so unlike Settings it takes over the
+        entire UI rather than a single panel. Re-opening focuses the existing
+        tab."""
+        from gui_qt.theme_editor_view import ThemeEditorView
+        if self._tabs.has_key("theme_editor"):
+            self._tabs.focus_key("theme_editor")
+            return
+        view = ThemeEditorView(self)
+        self._tabs.open_tab(view, self.tr("Theme Editor"), key="theme_editor")
 
     def _open_image_preview_tab(self, path, rel_str):
         """Open an image/.dds preview as a MODLIST-PANEL-SCOPED tab: it shows in
@@ -1366,20 +1380,7 @@ class MainWindow(QMainWindow):
         self._game_selector = SelectorButton(
             items=[],
             current=self.tr("Add game"),
-            actions=[
-                (self.tr("Add game…"), lambda: self._on_game_action("add")),
-                (self.tr("Configure game…"), lambda: self._on_game_action("configure")),
-                (self.tr("Define custom game…"), lambda: self._on_game_action("custom")),
-                (self.tr("Open"), [
-                    (self.tr("Game folder"),     lambda: self._open_game_dir("game")),
-                    (self.tr("Prefix folder"),   lambda: self._open_game_dir("prefix")),
-                    (self.tr("My Games folder"), lambda: self._open_game_dir("mygames")),
-                    (self.tr("AppData folder"),  lambda: self._open_game_dir("appdata")),
-                    (self.tr("Staging folder"),  lambda: self._open_game_dir("staging")),
-                    (self.tr("Profile folder"),  lambda: self._open_game_dir("profile")),
-                    (self.tr(".config folder"),  lambda: self._open_game_dir("config")),
-                ]),
-            ],
+            actions=self._game_actions(),
             on_select=self._on_game_changed,
         )
         self._game_selector.setFixedHeight(self._BTN_H)
@@ -1542,6 +1543,8 @@ class MainWindow(QMainWindow):
         # The Open submenu depends on the new game's profile-specific settings.
         self._refresh_profile_actions()
         self._game_selector.set_current(name)
+        # The 'Edit custom game…' entry depends on the active game.
+        self._refresh_game_actions()
         self._refresh_play_selector()
         self._clear_search_boxes()
         self._reload_modlist()
@@ -1631,6 +1634,39 @@ class MainWindow(QMainWindow):
                 except Exception:
                     pass
 
+    def _game_actions(self):
+        """Build the pinned entries for the game selector. The 'Edit custom
+        game…' entry only appears when the active game is a custom game whose
+        definition is editable (i.e. not a repo handler with editable: false)."""
+        actions = [
+            (self.tr("Add game…"), lambda: self._on_game_action("add")),
+            (self.tr("Configure game…"), lambda: self._on_game_action("configure")),
+            (self.tr("Define custom game…"), lambda: self._on_game_action("custom")),
+        ]
+        game = getattr(self._gs, "game", None)
+        if (game is not None
+                and getattr(game, "is_custom", False)
+                and getattr(game, "editable", False)):
+            actions.append(
+                (self.tr("Edit custom game…"), lambda: self._on_game_action("edit_custom")))
+        actions.append(
+            (self.tr("Open"), [
+                (self.tr("Game folder"),     lambda: self._open_game_dir("game")),
+                (self.tr("Prefix folder"),   lambda: self._open_game_dir("prefix")),
+                (self.tr("My Games folder"), lambda: self._open_game_dir("mygames")),
+                (self.tr("AppData folder"),  lambda: self._open_game_dir("appdata")),
+                (self.tr("Staging folder"),  lambda: self._open_game_dir("staging")),
+                (self.tr("Profile folder"),  lambda: self._open_game_dir("profile")),
+                (self.tr(".config folder"),  lambda: self._open_game_dir("config")),
+            ]))
+        return actions
+
+    def _refresh_game_actions(self):
+        """Rebuild the game-selector menu so the 'Edit custom game…' entry
+        appears/disappears to match the active game."""
+        if getattr(self, "_game_selector", None) is not None:
+            self._game_selector.set_actions(self._game_actions())
+
     def _on_game_action(self, which):
         if which == "add":
             self._open_add_game_tab()
@@ -1642,6 +1678,8 @@ class MainWindow(QMainWindow):
                 self._append_log("[game] no active game to configure")
         elif which == "custom":
             self._open_custom_game_tab()
+        elif which == "edit_custom":
+            self._open_edit_custom_game_tab()
         else:
             self._append_log(f"[game] {which} (not wired yet)")
 
@@ -1676,6 +1714,60 @@ class MainWindow(QMainWindow):
 
         view = CustomGameView(on_done=_done)
         self._tabs.open_tab(view, self.tr("Define custom game"), key="custom_game")
+
+    def _open_edit_custom_game_tab(self):
+        """Open the custom-game form pre-filled with the active game's definition
+        so it can be edited in place. Only reachable for custom, editable games
+        (see _game_actions). On save, refresh the game list + reload the game so
+        any changed name/paths/routing take effect."""
+        game = self._gs.game
+        defn = getattr(game, "_defn", None) if game is not None else None
+        if not defn:
+            self._append_log("[game] no editable custom-game definition to edit")
+            return
+        if self._tabs.has_key("custom_game"):
+            self._tabs.focus_key("custom_game")
+            return
+        from gui_qt.custom_game_view import CustomGameView
+
+        prev_name = self._gs.game_name
+
+        def _done(saved_defn, deleted):
+            self._tabs.close_tab("custom_game")
+            from Utils.game_helpers import _load_games, _GAMES
+            names = _load_games()
+            self._gs.game_names = names
+            real_names = [n for n in names if n != "No games configured"]
+            # A rename or delete may have changed which game we should show.
+            target = None
+            if saved_defn is not None and saved_defn["name"] in real_names:
+                target = saved_defn["name"]
+            elif prev_name in real_names:
+                target = prev_name
+            elif real_names:
+                target = real_names[0]
+            if target is not None:
+                self._game_selector.set_items(real_names, current=target)
+                # Re-select through the normal path so all views reload for the
+                # (possibly renamed) game.
+                self._gs.game_names = names
+                self._gs.set_game(target)
+                self._game_selector.set_current(target)
+                self._refresh_game_actions()
+                self._refresh_profile_actions()
+                self._refresh_play_selector()
+                self._reload_modlist()
+                self._reload_plugins()
+            else:
+                self._game_selector.set_items([], current=self.tr("Add game"))
+                self._refresh_game_actions()
+            if deleted:
+                self._append_log(f"[game] custom game deleted: {prev_name}")
+            elif saved_defn is not None:
+                self._append_log(f"[game] custom game edited: {saved_defn['name']}")
+
+        view = CustomGameView(on_done=_done, existing=defn)
+        self._tabs.open_tab(view, self.tr("Edit custom game"), key="custom_game")
 
     def _start_gh_sync(self):
         """Kick off background sync of custom handlers + Qt plugins from GitHub."""

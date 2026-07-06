@@ -46,6 +46,12 @@ def load_palettes() -> dict[str, dict[str, str | tuple]]:
                 print(f"[themes] skipping {mod_name}: no PALETTE dict", flush=True)
         except Exception as exc:
             print(f"[themes] failed to load {mod_name}: {exc}", flush=True)
+    # Merge in user-authored JSON themes (namespaced ids can't collide).
+    try:
+        from Utils.custom_themes import load_custom_palettes
+        palettes.update(load_custom_palettes())
+    except Exception as exc:
+        print(f"[themes] failed to load custom themes: {exc}", flush=True)
     return palettes
 
 
@@ -58,6 +64,11 @@ def load_display_names() -> dict[str, str]:
             names[mod_name] = getattr(mod, "NAME", mod_name.title())
         except Exception:
             pass
+    try:
+        from Utils.custom_themes import load_custom_display_names
+        names.update(load_custom_display_names())
+    except Exception:
+        pass
     return names
 
 
@@ -66,6 +77,12 @@ def get_ctk_appearance(theme_id: str) -> str:
     declares via its CTK_APPEARANCE attribute. Defaults to "dark" if the
     theme is missing, the attribute is absent, or the value is invalid.
     """
+    try:
+        from Utils.custom_themes import is_custom_theme, get_custom_ctk_appearance
+        if is_custom_theme(theme_id):
+            return get_custom_ctk_appearance(theme_id) or "dark"
+    except Exception:
+        pass
     try:
         mod = importlib.import_module(f"{__name__}.{theme_id}")
         value = str(getattr(mod, "CTK_APPEARANCE", "dark")).strip().lower()

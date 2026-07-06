@@ -24,20 +24,21 @@ from PySide6.QtWidgets import (
 
 from gui_qt.theme_qt import active_palette, _c, danger_close_button
 
-STATUS_BROKEN_BG = "#6b3333"
-STATUS_BROKEN_FG = "#ffd9d9"
-STATUS_OK_BG = "#2f5d3a"
-STATUS_OK_FG = "#dcf5dc"
+_PAL = active_palette()
+STATUS_BROKEN_BG = _c(_PAL, "PLUGIN_CYCLE_ERR_BG")
+STATUS_BROKEN_FG = _c(_PAL, "PLUGIN_CYCLE_ERR_FG")
+STATUS_OK_BG = _c(_PAL, "PLUGIN_CYCLE_OK_BG")
+STATUS_OK_FG = _c(_PAL, "PLUGIN_CYCLE_OK_FG")
 
 # Background for rule rows whose flip (on its own) would resolve every cycle
 # currently present in the scope. Chosen to read as a warm highlight against
 # the normal BG_ROW / BG_ROW_ALT palette without mimicking the red error tone.
-FIXABLE_ROW_BG = "#4a4320"
-FIXABLE_ROW_FG = "#f5e28a"
+FIXABLE_ROW_BG = _c(_PAL, "PLUGIN_CYCLE_WARN_BG")
+FIXABLE_ROW_FG = _c(_PAL, "PLUGIN_CYCLE_WARN_FG")
 
 # Per-keyword colors so "before" and "after" read as opposites at a glance.
-BEFORE_FG = "#e89862"
-AFTER_FG = "#62b0e8"
+BEFORE_FG = _c(_PAL, "PLUGIN_CYCLE_ANCHOR")
+AFTER_FG = _c(_PAL, "PLUGIN_CYCLE_LINK")
 
 
 class PluginCycleView(QWidget):

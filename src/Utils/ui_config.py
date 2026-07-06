@@ -1648,7 +1648,10 @@ def get_theme_color(key: str) -> str:
 # ---------------------------------------------------------------------------
 _APPEARANCE_OPTION = "appearance_mode"
 _APPEARANCE_DEFAULT = "dark"
-_APPEARANCE_ID_RE = _re.compile(r"^[a-z0-9_][a-z0-9_-]*$")
+# Theme ids are lowercase word chars/digits/dashes/underscores; user-authored
+# JSON themes add a single "custom:" namespace prefix (see Utils.custom_themes),
+# so a colon is permitted between the prefix and the slug.
+_APPEARANCE_ID_RE = _re.compile(r"^[a-z0-9_][a-z0-9_:-]*$")
 
 
 def get_appearance_mode() -> str:
