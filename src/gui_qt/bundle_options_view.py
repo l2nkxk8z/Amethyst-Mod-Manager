@@ -35,8 +35,6 @@ from Utils.re_bundle import (
     option_deployable_rels, option_image, option_description,
 )
 
-_MARKER_RED = "#e05a5a"   # matches Tk BG_RED_TEXT for the "(overridden)" note
-
 _HELP_TEXT = (
     "Choose which options are active. “Select one” groups allow a single "
     "choice; optional add-ons can be combined.\n"
@@ -301,7 +299,7 @@ class BundleOptionsView(QWidget):
 
     def _marker_label(self):
         m = QLabel("")
-        m.setStyleSheet(f"color:{_MARKER_RED};")
+        m.setStyleSheet(f"color:{_c(active_palette(), 'BG_RED_TEXT')};")
         return m
 
     def _attach_tooltip(self, widget, opt):

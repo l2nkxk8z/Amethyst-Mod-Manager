@@ -84,10 +84,10 @@ class DllOverridesView(QWidget):
         #DllEmpty {{ color: {c('TEXT_DIM')}; font-style: italic; }}
         #DllHint {{ color: {c('TEXT_DIM')}; }}
         #DllName {{ color: {c('TEXT_MAIN')}; }}
-        #DangerButton {{ background: #6b3333; color: #fff; border: none;
+        #DangerButton {{ background: {c('BTN_DANGER')}; color: {c('TEXT_ON_ACCENT')}; border: none;
                          border-radius: 4px; padding: 2px 10px; font-size: 13px;
                          font-weight: 600; }}
-        #DangerButton:hover {{ background: #8c4444; }}
+        #DangerButton:hover {{ background: {c('BTN_DANGER_HOV')}; }}
         """
 
     def _build(self):

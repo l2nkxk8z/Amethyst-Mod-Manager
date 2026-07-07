@@ -27,6 +27,41 @@ def _icon_url(name: str) -> str:
     return _ICONS_DIR.joinpath(name).as_posix()
 
 
+def _tinted_icon_url(name: str, color: str) -> str:
+    """Return a POSIX path to a recoloured copy of icons/<name> for QSS
+    `image: url(...)`.
+
+    QSS `url()` can't tint a PNG, so we bake a tinted copy once per (name,
+    color) into a temp cache dir and hand back its path. The alpha shape of the
+    source glyph is preserved; opaque pixels are filled with *color*.
+    Falls back to the untinted icon if the source is missing or Qt can't paint.
+    """
+    src = _ICONS_DIR / name
+    if not src.is_file():
+        return _icon_url(name)
+    import tempfile
+    cache_dir = Path(tempfile.gettempdir()) / "amethyst_tinted_icons"
+    safe_color = color.lstrip("#").lower() or "none"
+    out = cache_dir / f"{Path(name).stem}_{safe_color}.png"
+    if not out.is_file():
+        from PySide6.QtGui import QPixmap, QPainter, QColor
+        from PySide6.QtCore import Qt
+        pm = QPixmap(str(src))
+        if pm.isNull():
+            return _icon_url(name)
+        tinted = QPixmap(pm.size())
+        tinted.fill(Qt.transparent)
+        p = QPainter(tinted)
+        p.drawPixmap(0, 0, pm)          # original — for its alpha shape
+        p.setCompositionMode(QPainter.CompositionMode_SourceIn)
+        p.fillRect(tinted.rect(), QColor(color))
+        p.end()
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        if not tinted.save(str(out), "PNG"):
+            return _icon_url(name)
+    return out.as_posix()
+
+
 # The Qt app defaults to the original near-black "dark" palette. (Breeze Dark
 # stays available as a selectable theme — appearance_mode = "breeze".) The blue
 # checkboxes/selection come from this palette's ACCENT (#0078d4).
@@ -169,7 +204,7 @@ def build_qss(pal: dict | None = None) -> str:
     QMenu::right-arrow {{
         width: 12px; height: 12px;
         margin-right: 6px;
-        image: url({_icon_url('right.png')});
+        image: url({_tinted_icon_url('right.png', c('DROPDOWN_ARROW'))});
     }}
     QMenu::separator {{ height: 1px; background: {c('BORDER')}; margin: 5px 8px; }}
 
@@ -279,6 +314,19 @@ def build_qss(pal: dict | None = None) -> str:
         border-radius: 4px;
         padding: 4px 8px;
     }}
+    /* Replace Qt's default triangle drop-down indicator with arrow.png. */
+    QComboBox::drop-down {{
+        subcontrol-origin: padding;
+        subcontrol-position: center right;
+        width: 20px;
+        border: none;
+        background: transparent;
+    }}
+    QComboBox::down-arrow {{
+        image: url({_tinted_icon_url('arrow.png', c('DROPDOWN_ARROW'))});
+        width: 12px;
+        height: 12px;
+    }}
     QSplitter::handle {{ background: {c('BORDER')}; }}
     QSplitter::handle:horizontal {{ width: 6px; }}
     QSplitter::handle:vertical {{ height: 6px; }}
@@ -376,7 +424,15 @@ def build_qss(pal: dict | None = None) -> str:
         background: {c('ACCENT')};
         border-left: 1px solid {c('ACCENT_HOV')};
     }}
-    #ActionButton::menu-arrow {{ width: 10px; height: 10px; }}
+    /* Split-button dropdown arrow (QToolButton = ::menu-indicator,
+       QPushButton = ::menu-arrow): use arrow.png instead of Qt's triangle. */
+    #ActionButton::menu-indicator, #ActionButton::menu-arrow {{
+        image: url({_tinted_icon_url('arrow.png', c('DROPDOWN_ARROW'))});
+        width: 10px; height: 10px;
+        subcontrol-origin: padding;
+        subcontrol-position: center right;
+        right: 6px;
+    }}
     /* Square icon-only toolbar button (Settings). */
     #IconButton {{
         background: {c('BG_ROW')};
@@ -602,6 +658,48 @@ def _lighten(hex_color: str, factor: float = 0.18) -> str:
 CLOSE_BTN_SIZE = (90, 30)
 
 
+def button_qss(key: str, *, hover_key: str | None = None,
+               text_key: str = "TEXT_ON_ACCENT",
+               disabled_bg_key: str = "BTN_GREY",
+               disabled_fg_key: str = "TEXT_DIM",
+               pal: dict | None = None,
+               padding: str = "8px 24px") -> str:
+    """Return a palette-driven ``QPushButton`` stylesheet string.
+
+    Central builder so the many tab/wizard views that used to hardcode
+    ``background:#2d6a9e``-style hex (blue "Select", green "Done", orange,
+    red close) all pull their colours from the active theme instead — which
+    is what lets a monotone / high-contrast theme actually take effect.
+
+    *key* is the palette key for the base fill; the hover is *hover_key* when
+    given, otherwise the base blended toward white via :func:`_lighten`. Text,
+    disabled fill and disabled text are palette-driven too (no ``#fff`` /
+    ``#44484f`` literals)."""
+    if pal is None:
+        pal = active_palette()
+    bg = _c(pal, key)
+    hover = _c(pal, hover_key) if hover_key else _lighten(bg)
+    fg = _c(pal, text_key)
+    dis_bg = _c(pal, disabled_bg_key)
+    dis_fg = _c(pal, disabled_fg_key)
+    return (
+        "QPushButton{background:%s; color:%s; border:none;"
+        " padding:%s; border-radius:4px; font-weight:600;}"
+        "QPushButton:hover{background:%s;}"
+        "QPushButton:disabled{background:%s; color:%s;}"
+        % (bg, fg, padding, hover, dis_bg, dis_fg))
+
+
+def ok_text(pal: dict | None = None) -> str:
+    """Palette colour for success/green status labels (was hardcoded #6bc76b)."""
+    return _c(pal or active_palette(), "TEXT_OK_BRIGHT")
+
+
+def err_text(pal: dict | None = None) -> str:
+    """Palette colour for error/red status labels (was hardcoded #e06c6c)."""
+    return _c(pal or active_palette(), "TEXT_ERR_BRIGHT")
+
+
 def danger_close_button(text: str = "✕ Close", pal: dict | None = None):
     """Shared red close button for tab/scoped views.
 
@@ -616,13 +714,14 @@ def danger_close_button(text: str = "✕ Close", pal: dict | None = None):
         pal = active_palette()
     danger = _c(pal, "BTN_DANGER")
     hover = _lighten(danger)
+    fg = _c(pal, "TEXT_ON_ACCENT")
     btn = QPushButton(text)
     btn.setFixedSize(*CLOSE_BTN_SIZE)
     btn.setCursor(Qt.PointingHandCursor)
     btn.setStyleSheet(
-        "QPushButton{background:%s; color:#fff; border:none;"
+        "QPushButton{background:%s; color:%s; border:none;"
         " border-radius:4px; font-weight:600;}"
-        "QPushButton:hover{background:%s;}" % (danger, hover))
+        "QPushButton:hover{background:%s;}" % (danger, fg, hover))
     return btn
 
 

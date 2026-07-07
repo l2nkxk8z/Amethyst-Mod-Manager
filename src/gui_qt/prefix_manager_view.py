@@ -18,14 +18,12 @@ from PySide6.QtWidgets import (
     QScrollArea, QFrame,
 )
 
-from gui_qt.theme_qt import active_palette, _c, danger_close_button
+from gui_qt.theme_qt import active_palette, _c, danger_close_button, button_qss, err_text
 from gui_qt.safe_emit import safe_emit
 from Utils.prefix_manager import (
     PrefixEntry, enumerate_prefixes, fmt_size, get_dir_size,
     is_deletable_prefix,
 )
-
-_RED = "#e06c6c"
 
 
 class PrefixManagerView(QWidget):
@@ -114,10 +112,7 @@ class PrefixManagerView(QWidget):
         rh.addStretch(1)
         self._del_sel_btn = QPushButton(self.tr("Delete Selected"))
         self._del_sel_btn.setStyleSheet(
-            "QPushButton{background:#6b3333; color:#fff; border:none;"
-            " padding:6px 14px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#8c4444;}"
-            "QPushButton:disabled{background:#44484f; color:#9aa0a6;}")
+            button_qss("BTN_DANGER", padding="6px 14px"))
         self._del_sel_btn.clicked.connect(self._on_delete_selected)
         rh.addWidget(self._del_sel_btn)
         self._del_all_btn = QPushButton(self.tr("Delete All"))
@@ -309,5 +304,5 @@ class PrefixManagerView(QWidget):
         if errors:
             self._status.setText(
                 self.tr("Deleted {0}; {1} problem(s) — see log.").format(deleted, len(errors)))
-            self._status.setStyleSheet(f"color:{_RED}; padding:2px 12px;")
+            self._status.setStyleSheet(f"color:{err_text()}; padding:2px 12px;")
         self._reload()

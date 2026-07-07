@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QScrollArea, QFrame,
 )
 
-from gui_qt.theme_qt import active_palette, _c, danger_close_button
+from gui_qt.theme_qt import active_palette, _c, danger_close_button, button_qss
 from gui_qt.safe_emit import safe_emit
 
 
@@ -83,10 +83,7 @@ class _ReqCard(QFrame):
 
         view = QPushButton(self.tr("View"))
         view.setCursor(Qt.PointingHandCursor)
-        view.setStyleSheet(
-            "QPushButton{background:#444; color:#fff; border:none;"
-            " padding:5px 14px; border-radius:4px;}"
-            "QPushButton:hover{background:#555;}")
+        view.setStyleSheet(button_qss("BTN_GREY", padding="5px 14px"))
         view.setEnabled(bool(url))
         view.clicked.connect(lambda _=False, u=url: on_view(u))
         h.addWidget(view, 0, Qt.AlignTop)
@@ -96,10 +93,7 @@ class _ReqCard(QFrame):
         if not is_external:
             inst = QPushButton(self.tr("Install"))
             inst.setCursor(Qt.PointingHandCursor)
-            inst.setStyleSheet(
-                "QPushButton{background:#2e7d32; color:#fff; border:none;"
-                " padding:5px 14px; border-radius:4px; font-weight:600;}"
-                "QPushButton:hover{background:#388e3c;}")
+            inst.setStyleSheet(button_qss("BTN_SUCCESS", padding="5px 14px"))
             inst.clicked.connect(lambda _=False, r=req: on_install(r))
             h.addWidget(inst, 0, Qt.AlignTop)
 

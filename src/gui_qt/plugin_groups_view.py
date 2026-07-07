@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
     QListWidget, QComboBox, QFrame, QScrollArea,
 )
 
-from gui_qt.theme_qt import active_palette, _c, danger_close_button
+from gui_qt.theme_qt import active_palette, _c, danger_close_button, button_qss
 from gui_qt.wheel_guard import no_wheel
 from Utils.userlist import (
     DEFAULT_GROUP, parse_userlist, write_userlist, remove_group,
@@ -81,6 +81,7 @@ class PluginGroupsView(QWidget):
         self._c_border = _c(p, "BORDER")
         self._c_text = _c(p, "TEXT_MAIN")
         self._c_text_dim = _c(p, "TEXT_DIM")
+        self._c_danger = _c(p, "BTN_DANGER")
         self._c_accent = _c(p, "ACCENT")
         self._c_accent_hov = _c(p, "ACCENT_HOV")
         self._c_on_accent = _c(p, "TEXT_ON_ACCENT")
@@ -169,10 +170,7 @@ class PluginGroupsView(QWidget):
         add_btn = QPushButton(self.tr("Add"))
         add_btn.setFixedSize(60, 28)
         add_btn.setCursor(Qt.PointingHandCursor)
-        add_btn.setStyleSheet(
-            "QPushButton { background:#2d7a2d; color:white; border:none;"
-            " border-radius:4px; }"
-            "QPushButton:hover { background:#3a9e3a; }")
+        add_btn.setStyleSheet(button_qss("BTN_SUCCESS", padding="0px"))
         add_btn.clicked.connect(self._add_group)
         add_row.addWidget(add_btn)
         v.addLayout(add_row)
@@ -219,10 +217,7 @@ class PluginGroupsView(QWidget):
         add_rule_btn = QPushButton(self.tr("Add Rule"))
         add_rule_btn.setFixedSize(100, 28)
         add_rule_btn.setCursor(Qt.PointingHandCursor)
-        add_rule_btn.setStyleSheet(
-            "QPushButton { background:#2d7a2d; color:white; border:none;"
-            " border-radius:4px; }"
-            "QPushButton:hover { background:#3a9e3a; }")
+        add_rule_btn.setStyleSheet(button_qss("BTN_SUCCESS", padding="0px"))
         add_rule_btn.clicked.connect(self._add_rule)
         rule_row.addWidget(add_rule_btn)
         v.addLayout(rule_row)
@@ -338,7 +333,7 @@ class PluginGroupsView(QWidget):
             rm.setStyleSheet(
                 f"QPushButton {{ background:{self._c_bg_deep};"
                 f" color:{self._c_text_dim}; border:none; border-radius:4px; }}"
-                "QPushButton:hover { background:#6b3333; }")
+                f"QPushButton:hover {{ background:{self._c_danger}; }}")
             rm.clicked.connect(lambda _=False, idx=i: self._remove_rule(idx))
             h.addWidget(rm)
 

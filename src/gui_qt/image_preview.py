@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QScrollArea, QSizePolicy,
 )
 
+from gui_qt.theme_qt import active_palette, _c
+
 PREVIEW_EXTS = {
     ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp",
     ".tga", ".tif", ".tiff", ".ico", ".dds",
@@ -105,17 +107,19 @@ class ImagePreview(QWidget):
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(0)
 
+        pal = active_palette()
         header = QLabel(display_name or path.name)
         header.setObjectName("ImagePreviewHeader")
         header.setStyleSheet(
-            "background:#252525; color:#ddd; padding:6px 10px; font-weight:600;")
+            f"background:{_c(pal, 'BG_HEADER')}; color:{_c(pal, 'TEXT_MAIN')};"
+            " padding:6px 10px; font-weight:600;")
         header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         v.addWidget(header)
 
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
         self._scroll.setAlignment(Qt.AlignCenter)
-        self._scroll.setStyleSheet("background:#2a2a2a; border:none;")
+        self._scroll.setStyleSheet(f"background:{_c(pal, 'BG_DEEP')}; border:none;")
         self._canvas = _ImageCanvas()
         self._scroll.setWidget(self._canvas)
         v.addWidget(self._scroll, 1)

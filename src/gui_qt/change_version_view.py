@@ -19,24 +19,26 @@ from PySide6.QtWidgets import (
     QCheckBox, QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
 )
 
-from gui_qt.theme_qt import active_palette, _c, danger_close_button
+from gui_qt.theme_qt import active_palette, _c, danger_close_button, button_qss
 from gui_qt.icons import icon
 from gui_qt.safe_emit import safe_emit
 from Utils.mod_files_versions import resolve_latest_name_match, fmt_size, sort_key
 
-# Exact Tk highlight colours (mod_files_overlay.py) — user chose to keep these.
-_INSTALLED_BG = QColor("#1a3320"); _INSTALLED_FG = QColor("#4caf50")
-_MATCH_BG = QColor("#3a2a14");     _MATCH_FG = QColor("#ff9a3c")
-_OLD_MATCH_BG = QColor("#3a1818"); _OLD_MATCH_FG = QColor("#e05a5a")
+# File-row highlight colours, resolved from the active theme so a monotone /
+# high-contrast theme actually takes effect (were hardcoded Tk hex before).
+def _hl_colors(p: dict | None = None) -> dict[str, QColor]:
+    p = p or active_palette()
+    return {
+        "installed_bg": QColor(_c(p, "BG_GREEN_DEEP")),
+        "installed_fg": QColor(_c(p, "TEXT_OK_BRIGHT")),
+        "match_bg":     QColor(_c(p, "BG_ORANGE_DEEP")),
+        "match_fg":     QColor(_c(p, "STATUS_QUEUED")),
+        "old_bg":       QColor(_c(p, "BG_RED_DEEP")),
+        "old_fg":       QColor(_c(p, "TEXT_ERR_BRIGHT")),
+    }
+
 
 _COLS = ["File", "Version", "Category", "Size", ""]
-
-_LEGEND_ITEMS = [
-    (_INSTALLED_FG, "Currently installed"),
-    (_MATCH_FG, "Newest matching version"),
-    (_OLD_MATCH_FG, "Older matching version"),
-    (None, "No name match"),
-]
 
 
 class _LegendBar(QWidget):
@@ -54,7 +56,14 @@ class _LegendBar(QWidget):
         self._grid.setContentsMargins(self._MARGIN, 4, self._MARGIN, 4)
         self._grid.setHorizontalSpacing(self._COL_GAP)
         self._grid.setVerticalSpacing(2)
-        self._entries = [self._make_entry(p, c, lbl) for c, lbl in _LEGEND_ITEMS]
+        hl = _hl_colors(p)
+        legend_items = [
+            (hl["installed_fg"], "Currently installed"),
+            (hl["match_fg"], "Newest matching version"),
+            (hl["old_fg"], "Older matching version"),
+            (None, "No name match"),
+        ]
+        self._entries = [self._make_entry(p, c, lbl) for c, lbl in legend_items]
         self._cols = 0          # force first layout
         self._one_row_min = self._one_row_width()
         self._relayout(force=True)
@@ -221,17 +230,18 @@ class ChangeVersionView(QWidget):
             getattr(self._meta, "game_domain", "") or ""
         mod_id = int(getattr(self._meta, "mod_id", 0) or 0)
 
+        hl = _hl_colors()
         self._table.setRowCount(len(files))
         for row, f in enumerate(files):
             is_installed = installed_id > 0 and f.file_id == installed_id
             is_match = not is_installed and match_id > 0 and f.file_id == match_id
             is_old = not is_installed and not is_match and f.file_id in old_ids
             if is_installed:
-                bg, name_fg = _INSTALLED_BG, _INSTALLED_FG
+                bg, name_fg = hl["installed_bg"], hl["installed_fg"]
             elif is_match:
-                bg, name_fg = _MATCH_BG, _MATCH_FG
+                bg, name_fg = hl["match_bg"], hl["match_fg"]
             elif is_old:
-                bg, name_fg = _OLD_MATCH_BG, _OLD_MATCH_FG
+                bg, name_fg = hl["old_bg"], hl["old_fg"]
             else:
                 bg = name_fg = None
 
@@ -256,19 +266,13 @@ class ChangeVersionView(QWidget):
             view_url = (f"https://www.nexusmods.com/{domain}/mods/{mod_id}"
                         f"?tab=files&file_id={f.file_id}")
             view_btn = QPushButton(self.tr("View")); view_btn.setCursor(Qt.PointingHandCursor)
-            view_btn.setStyleSheet(
-                "QPushButton{background:#444; color:#fff; border:none;"
-                " padding:4px 10px; border-radius:4px;}"
-                "QPushButton:hover{background:#555;}")
+            view_btn.setStyleSheet(button_qss("BTN_GREY", padding="4px 10px"))
             view_btn.clicked.connect(lambda _=False, u=view_url: self._open_url(u))
             cb.addWidget(view_btn)
             inst_btn = QPushButton(self.tr("Install")); inst_btn.setCursor(Qt.PointingHandCursor)
-            # Explicit green so the row tint (set on the parent cell) can't bleed
-            # into the button background — it must always read as green.
-            inst_btn.setStyleSheet(
-                "QPushButton{background:#2e7d32; color:#fff; border:none;"
-                " padding:4px 10px; border-radius:4px; font-weight:600;}"
-                "QPushButton:hover{background:#388e3c;}")
+            # Explicit success colour so the row tint (set on the parent cell)
+            # can't bleed into the button background.
+            inst_btn.setStyleSheet(button_qss("BTN_SUCCESS", padding="4px 10px"))
             inst_btn.clicked.connect(
                 lambda _=False, ff=f: self._install_file(ff))
             cb.addWidget(inst_btn)

@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QStackedWidget, QFrame, QComboBox,
 )
 
-from gui_qt.theme_qt import active_palette, _c
+from gui_qt.theme_qt import active_palette, _c, button_qss
 from gui_qt.safe_emit import safe_emit
 from gui_qt.wheel_guard import no_wheel
 from Utils.config_paths import get_profiles_dir, get_config_dir
@@ -171,10 +171,7 @@ class OnboardingView(QWidget):
             f" QPushButton:hover {{ background: {_c(pal, 'BG_ROW_HOVER')}; }}")
 
     def _orange_btn_qss(self) -> str:
-        return (
-            "QPushButton { background: #d98f40; color: white; border: none;"
-            " border-radius: 4px; padding: 8px 16px; font-weight: 600; }"
-            " QPushButton:hover { background: #e5a04d; }")
+        return button_qss("BTN_WARN", padding="8px 16px")
 
     def _card(self) -> "tuple[QWidget, QFrame]":
         """A centered panel card matching the Tk inner frame. Returns

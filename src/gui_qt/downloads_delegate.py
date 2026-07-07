@@ -99,7 +99,7 @@ class DownloadsDelegate(QStyledItemDelegate):
         p.setBrush(QBrush(self.c_check if on else self.c_check_off))
         p.drawRoundedRect(box, 3, 3)
         if on:
-            p.setPen(QPen(QColor("white"), 2))
+            p.setPen(QPen(self.c_selall_text, 2))
             p.drawLine(box.left() + 4, box.center().y() + 1,
                        box.center().x() - 1, box.bottom() - 4)
             p.drawLine(box.center().x() - 1, box.bottom() - 4,

@@ -679,8 +679,8 @@ _DEFAULT_MAX_CONCURRENT = 8
 _DEFAULT_MAX_EXTRACT_WORKERS = 8
 
 # Upper clamps for the user-configurable concurrency (Settings ▸ Downloads).
-_MAX_CONCURRENT_CEILING = 16
-_MAX_EXTRACT_WORKERS_CEILING = 16
+_MAX_CONCURRENT_CEILING = 12
+_MAX_EXTRACT_WORKERS_CEILING = 8
 
 # First-run defaults — written to the INI only when it is being created for
 # the first time (see load_ui_scale). Existing installs keep whatever defaults

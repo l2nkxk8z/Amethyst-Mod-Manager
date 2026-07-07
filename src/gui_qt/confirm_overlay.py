@@ -46,10 +46,10 @@ class ConfirmOverlay(QWidget):
         self._card.setStyleSheet(
             f"#ConfirmCard {{ background:{_c(p,'BG_PANEL')};"
             f" border:1px solid {_c(p,'BORDER')}; border-radius:8px; }}"
-            f" #DangerButton {{ background:#6b3333; color:#fff;"
+            f" #DangerButton {{ background:{_c(p,'BTN_DANGER')}; color:{_c(p,'TEXT_ON_ACCENT')};"
             f" border:none; border-radius:4px; padding:6px 14px;"
             f" font-weight:600; }}"
-            f" #DangerButton:hover {{ background:#8c4444; }}")
+            f" #DangerButton:hover {{ background:{_c(p,'BTN_DANGER_HOV')}; }}")
         v = QVBoxLayout(self._card)
         v.setContentsMargins(18, 16, 18, 16)
         v.setSpacing(8)

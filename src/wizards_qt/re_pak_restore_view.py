@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QPlainTextEdit,
 )
 
-from gui_qt.theme_qt import active_palette, _c
+from gui_qt.theme_qt import active_palette, _c, button_qss, ok_text, err_text
 from gui_qt.safe_emit import safe_emit
 from Utils.re_pak_patcher import (
     ROOT_MANIFEST_NAME,
@@ -74,9 +74,7 @@ class RePakRestoreView(QWidget):
         close = QPushButton(self.tr("✕ Close"))
         close.setCursor(Qt.PointingHandCursor)
         close.setStyleSheet(
-            "QPushButton{background:#6b3333; color:#fff; border:none;"
-            " padding:5px 12px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#8c4444;}")
+            button_qss("BTN_DANGER", padding="5px 12px"))
         close.clicked.connect(self._on_close)
         hb.addWidget(close)
         v.addWidget(bar)
@@ -89,7 +87,7 @@ class RePakRestoreView(QWidget):
 
         if not self._game_root or not self._game_root.is_dir():
             err = QLabel(self.tr("Game path is not set or invalid."))
-            err.setStyleSheet("color:#e06c6c;")
+            err.setStyleSheet(f"color:{err_text()};")
             bl.addWidget(err)
             bl.addStretch(1)
             return

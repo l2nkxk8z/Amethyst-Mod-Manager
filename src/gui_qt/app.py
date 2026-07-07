@@ -9342,12 +9342,13 @@ class MainWindow(QMainWindow):
         self._github_btn.clicked.connect(self._open_github)
         h.addWidget(self._github_btn)
 
-        self._kofi_btn = self._color_button(self.tr("Ko-Fi"), "#7b2d8b", compact=True)
+        self._kofi_btn = self._color_button(
+            self.tr("Ko-Fi"), _c(self._pal, "BTN_PURPLE"), compact=True)
         self._kofi_btn.clicked.connect(self._open_kofi)
         h.addWidget(self._kofi_btn)
 
         self._endorse_amm_btn = self._color_button(
-            self.tr("♥ Endorse AMM"), "#7a2a2a", compact=True)
+            self.tr("♥ Endorse AMM"), _c(self._pal, "BTN_DANGER"), compact=True)
         self._endorse_amm_btn.clicked.connect(self._endorse_amm)
         h.addWidget(self._endorse_amm_btn)
 

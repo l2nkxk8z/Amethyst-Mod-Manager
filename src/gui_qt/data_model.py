@@ -141,5 +141,6 @@ class DataModel(QAbstractItemModel):
         if role == Qt.BackgroundRole and self._highlight_mod:
             if not node.is_dir and node.mod == self._highlight_mod:
                 from PySide6.QtGui import QColor
-                return QColor("#A45500")   # orange — matches modlist anchor tint
+                from gui_qt.theme_qt import active_palette, _c
+                return QColor(_c(active_palette(), "CONFLICT_HL_ANCHOR"))  # matches modlist anchor tint
         return None

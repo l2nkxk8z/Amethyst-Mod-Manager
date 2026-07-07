@@ -126,6 +126,7 @@ class ModRowDelegate(QStyledItemDelegate):
         self.c_text_dim = QColor(_c(p, "TEXT_DIM"))
         self.c_text_on_sel = QColor(_c(p, "TEXT_ON_ACCENT"))
         self.c_border = QColor(_c(p, "BORDER"))
+        self.c_arrow = _c(p, "DROPDOWN_ARROW")   # separator collapse arrow tint
         self.c_lock = QColor(_c(p, "TEXT_WARN"))
         self.c_win = QColor(_c(p, "TEXT_OK_BRIGHT"))
         self.c_lose = QColor(_c(p, "TEXT_ERR_BRIGHT"))
@@ -133,10 +134,10 @@ class ModRowDelegate(QStyledItemDelegate):
         self.c_check_off = QColor(_c(p, "BG_DEEP"))   # checkbox fill when disabled
         self.c_overwrite_bg = QColor(_c(p, "BG_DARK_GREEN"))  # Overwrite band
         self.c_root_bg = QColor(_c(p, "BG_DARK_BLUE"))        # Root Folder band
-        # Cross-panel highlight row tints (exact Tk conflict colours).
-        self.c_hl_higher = QColor("#108d00")   # selection beats this mod (green)
-        self.c_hl_lower = QColor("#9a0e0e")    # this mod beats selection (red)
-        self.c_hl_anchor = QColor("#A45500")   # plugin-selected mod (orange)
+        # Cross-panel highlight row tints (palette-driven; seeded from Tk colours).
+        self.c_hl_higher = QColor(_c(p, "CONFLICT_HL_WIN"))    # selection beats this mod (green)
+        self.c_hl_lower = QColor(_c(p, "CONFLICT_HL_LOSE"))    # this mod beats selection (red)
+        self.c_hl_anchor = QColor(_c(p, "CONFLICT_HL_ANCHOR")) # plugin-selected mod (orange)
         self.c_root_text = QColor(_c(p, "TONE_BLUE_SOFT"))
         self.c_overwrite_text = QColor(_c(p, "TEXT_OK_BRIGHT"))
         # Shared row/label fonts — paint() runs per visible cell, so build
@@ -314,7 +315,8 @@ class ModRowDelegate(QStyledItemDelegate):
 
         # Collapse arrow — right.png when collapsed, arrow.png when expanded.
         a = self._arrow_rect(r)
-        ico = icon("right.png" if collapsed else "arrow.png", self.ARROW_SZ)
+        ico = icon("right.png" if collapsed else "arrow.png", self.ARROW_SZ,
+                   color=self.c_arrow)
         if not ico.isNull():
             ico.paint(p, a)
 
@@ -374,7 +376,7 @@ class ModRowDelegate(QStyledItemDelegate):
         p.setBrush(QBrush(self.c_check if e.enabled else self.c_check_off))
         p.drawRoundedRect(box, 3, 3)
         if e.enabled:
-            p.setPen(QPen(QColor("white"), 2))
+            p.setPen(QPen(self.c_text_on_sel, 2))
             p.drawLine(box.left() + 4, box.center().y() + 1,
                        box.center().x() - 1, box.bottom() - 4)
             p.drawLine(box.center().x() - 1, box.bottom() - 4,

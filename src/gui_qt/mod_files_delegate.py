@@ -31,8 +31,10 @@ class ModFilesDelegate(QStyledItemDelegate):
         self.c_border = QColor(_c(p, "BORDER_FAINT"))
         self.c_check = QColor(_c(p, "ACCENT"))
         self.c_check_off = QColor(_c(p, "BG_DEEP"))
+        self.c_tick = QColor(_c(p, "TEXT_ON_ACCENT"))
         self.c_sel = QColor(_c(p, "BG_SELECT"))
         self.c_part = QColor(_c(p, "ACCENT"))
+        self.c_arrow = _c(p, "DROPDOWN_ARROW")   # expand/collapse arrow tint
 
     def paint(self, p, opt, index):
         r = opt.rect
@@ -64,7 +66,8 @@ class ModFilesDelegate(QStyledItemDelegate):
         if node.is_dir and self._view.model().rowCount(index) > 0:
             a = QRect(x, r.top() + (r.height() - ARROW_SZ) // 2, ARROW_SZ, ARROW_SZ)
             expanded = self._view.isExpanded(index)
-            ico = icon("arrow.png" if expanded else "right.png", ARROW_SZ)
+            ico = icon("arrow.png" if expanded else "right.png", ARROW_SZ,
+                       color=self.c_arrow)
             if not ico.isNull():
                 ico.paint(p, a)
         x += ARROW_SZ + 2
@@ -114,13 +117,13 @@ class ModFilesDelegate(QStyledItemDelegate):
         p.setBrush(QBrush(fill))
         p.drawRoundedRect(box, 3, 3)
         if on and not greyed:
-            p.setPen(QPen(QColor("white"), 2))
+            p.setPen(QPen(self.c_tick, 2))
             p.drawLine(box.left() + 4, box.center().y() + 1,
                        box.center().x() - 1, box.bottom() - 4)
             p.drawLine(box.center().x() - 1, box.bottom() - 4,
                        box.right() - 3, box.top() + 4)
         elif partial and not greyed:
-            p.setPen(QPen(QColor("white"), 2))
+            p.setPen(QPen(self.c_tick, 2))
             p.drawLine(box.left() + 4, box.center().y(),
                        box.right() - 4, box.center().y())
         p.setRenderHint(p.RenderHint.Antialiasing, False)

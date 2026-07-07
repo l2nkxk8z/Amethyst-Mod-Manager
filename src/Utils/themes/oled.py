@@ -168,6 +168,9 @@ PALETTE: dict[str, str | tuple] = {
     "CTK_SEP_ALT":    ("#D0D0D0", "#242424"),
     "CTK_BTN_HOVER":  ("gray90", "gray15"),
 
+    # Dropdown / combobox arrow glyph (tinted via QSS-generated PNG)
+    "DROPDOWN_ARROW": "#25abe8",
+
     # Misc
     "LINK_BLUE":     "#3574F0",
 
@@ -189,4 +192,9 @@ PALETTE: dict[str, str | tuple] = {
 
     # Drag selection outline (modlist / plugins)
     "HIGHLIGHT_DRAG": "#5aa9ff",
+
+    # Cross-panel conflict row highlights (modlist / plugins / data tree)
+    "CONFLICT_HL_WIN":    "#108d00",   # selection beats this mod (green)
+    "CONFLICT_HL_LOSE":   "#9a0e0e",   # this mod beats selection (red)
+    "CONFLICT_HL_ANCHOR": "#A45500",   # plugin-selected / anchor mod (orange)
 }

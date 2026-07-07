@@ -155,6 +155,7 @@ class PluginRulesView(QWidget):
         self._c_text = _c(p, "TEXT_MAIN")
         self._c_text_dim = _c(p, "TEXT_DIM")
         self._c_accent = _c(p, "ACCENT")
+        self._c_danger = _c(p, "BTN_DANGER")
 
         self.setStyleSheet(f"""
             #PluginRulesView {{ background:{self._c_bg_deep}; }}
@@ -370,7 +371,7 @@ class PluginRulesView(QWidget):
             rm.setStyleSheet(
                 f"QPushButton {{ background:{self._c_bg_deep};"
                 f" color:{self._c_text_dim}; border:none; border-radius:4px; }}"
-                "QPushButton:hover { background:#6b3333; }")
+                f"QPushButton:hover {{ background:{self._c_danger}; }}")
             rm.clicked.connect(lambda _=False, idx=i: self._remove_rule(idx))
             h.addWidget(rm)
 

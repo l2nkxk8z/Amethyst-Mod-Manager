@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QProgressBar, QGridLayout,
 )
 
-from gui_qt.theme_qt import active_palette, _c
+from gui_qt.theme_qt import active_palette, _c, button_qss, ok_text, err_text
 from gui_qt.safe_emit import safe_emit
 from Utils.reshade_tools import (
     API_CHOICES, OPTIONAL_SHADER_PACKS, OBSOLETE_PRESET_EFFECTS,
@@ -38,8 +38,6 @@ from Utils.reshade_tools import (
 if TYPE_CHECKING:
     from Games.base_game import BaseGame
 
-_GREEN = "#6bc76b"
-_RED = "#e06c6c"
 _WARN = "#d9a441"
 
 
@@ -116,9 +114,7 @@ class ReShadeView(QWidget):
         self._close_btn = QPushButton(self.tr("✕ Close"))
         self._close_btn.setCursor(Qt.PointingHandCursor)
         self._close_btn.setStyleSheet(
-            "QPushButton{background:#6b3333; color:#fff; border:none;"
-            " padding:5px 12px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#8c4444;}")
+            button_qss("BTN_DANGER", padding="5px 12px"))
         self._close_btn.clicked.connect(self._finish)
         hb.addWidget(self._close_btn)
         v.addWidget(bar)
@@ -164,10 +160,7 @@ class ReShadeView(QWidget):
         b = QPushButton(text)
         b.setCursor(Qt.PointingHandCursor)
         b.setStyleSheet(
-            "QPushButton{background:#2d6a9e; color:#fff; border:none;"
-            " padding:8px 24px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#3a7fb8;}"
-            "QPushButton:disabled{background:#44484f; color:#9aa0a6;}")
+            button_qss("BTN_INFO"))
         return b
 
     # ---- step 1: API / arch -------------------------------------------------
@@ -304,7 +297,7 @@ class ReShadeView(QWidget):
         self._preset_wanted = wanted
         self._log(f"ReShade wizard: preset '{path.name}' needs {len(wanted)} effect(s).")
         self._preset_label.setText(path.name)
-        self._preset_label.setStyleSheet(f"color:{_GREEN};")
+        self._preset_label.setStyleSheet(f"color:{ok_text()};")
         self._clear_preset_btn.setVisible(True)
         self._apply_preset_lock(True)
 
@@ -417,13 +410,13 @@ class ReShadeView(QWidget):
                         ok_msg = "\n".join(lines)
                     else:
                         ok_msg = f"Trimmed shaders to {kept} preset effect(s)."
-                safe_emit(self._dl_status_sig, ok_msg, _GREEN)
+                safe_emit(self._dl_status_sig, ok_msg, ok_text())
                 safe_emit(self._dl_done_sig, True)
             except Exception as exc:
                 self._log(f"ReShade wizard: download failed: {exc}")
                 safe_emit(self._dl_status_sig,
                     f"Download failed:\n{exc}\n\nCheck your internet connection "
-                    "and try again.", _RED)
+                    "and try again.", err_text())
                 safe_emit(self._dl_done_sig, False)
 
         threading.Thread(target=worker, daemon=True, name="reshade-download").start()
@@ -478,7 +471,7 @@ class ReShadeView(QWidget):
         if already:
             self._d3d_info.setText(self.tr("d3dcompiler_47 is already installed in this "
                                    "prefix.\nYou can skip this step."))
-            self._d3d_info.setStyleSheet(f"color:{_GREEN};")
+            self._d3d_info.setStyleSheet(f"color:{ok_text()};")
             self._d3d_btn.setText(self.tr("Next →"))
             self._rewire(self._d3d_btn, self._enter_install)
         elif not can_install:
@@ -510,7 +503,7 @@ class ReShadeView(QWidget):
                 ok = install_d3dcompiler_47(
                     game, log_fn=lambda m: safe_emit(self._d3d_status_sig, str(m), ""))
             except Exception as exc:
-                safe_emit(self._d3d_status_sig, f"Install error: {exc}", _RED)
+                safe_emit(self._d3d_status_sig, f"Install error: {exc}", err_text())
             safe_emit(self._d3d_done_sig, bool(ok))
 
         threading.Thread(target=worker, daemon=True, name="reshade-d3d").start()
@@ -520,13 +513,13 @@ class ReShadeView(QWidget):
         if ok:
             self._set_lbl(self._d3d_status,
                           "d3dcompiler_47 installed successfully.\nClick Next to "
-                          "continue.", _GREEN)
+                          "continue.", ok_text())
             self._d3d_btn.setText(self.tr("Next →"))
             self._rewire(self._d3d_btn, self._enter_install)
         else:
             self._set_lbl(self._d3d_status,
                           "Install failed — you can Skip and install it manually.",
-                          _RED)
+                          err_text())
             self._d3d_btn.setText(self.tr("Retry"))
             self._rewire(self._d3d_btn, self._install_d3d)
 
@@ -584,10 +577,7 @@ class ReShadeView(QWidget):
         self._done_btn.setEnabled(False)
         self._done_btn.setCursor(Qt.PointingHandCursor)
         self._done_btn.setStyleSheet(
-            "QPushButton{background:#2d7a2d; color:#fff; border:none;"
-            " padding:8px 24px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#3a9e3a;}"
-            "QPushButton:disabled{background:#44484f; color:#9aa0a6;}")
+            button_qss("BTN_SUCCESS"))
         self._done_btn.clicked.connect(self._finish)
         nh.addWidget(self._done_btn)
         lay.addWidget(nav)
@@ -637,11 +627,11 @@ class ReShadeView(QWidget):
                 # Touching widgets from this worker spawns a stray window.
                 msg = install_reshade_files(
                     game, log_fn=lambda m: self._log(str(m)), **args)
-                safe_emit(self._install_status_sig, msg, _GREEN)
+                safe_emit(self._install_status_sig, msg, ok_text())
                 safe_emit(self._install_done_sig, True)
             except Exception as exc:
                 self._log(f"ReShade wizard error: {exc}")
-                safe_emit(self._install_status_sig, f"Error: {exc}", _RED)
+                safe_emit(self._install_status_sig, f"Error: {exc}", err_text())
                 safe_emit(self._install_done_sig, False)
 
         threading.Thread(target=worker, daemon=True, name="reshade-install").start()

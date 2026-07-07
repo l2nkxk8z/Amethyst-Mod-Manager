@@ -144,6 +144,7 @@ GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
         ("ACCENT_HOV", "Accent hover"),
         ("TEXT_ON_ACCENT", "Text on accent"),
         ("LINK_BLUE", "Hyperlink"),
+        ("DROPDOWN_ARROW", "Dropdown arrow"),
     ]),
     ("Borders", [
         ("BORDER", "Border"),
@@ -264,6 +265,11 @@ GROUPS: list[tuple[str, list[tuple[str, str]]]] = [
         ("FILE_DIM", "File dim"),
         ("FILE_ANCHOR", "File anchor"),
         ("HIGHLIGHT_DRAG", "Drag selection outline"),
+    ]),
+    ("Conflict highlights", [
+        ("CONFLICT_HL_WIN", "Conflict row — winning"),
+        ("CONFLICT_HL_LOSE", "Conflict row — overridden"),
+        ("CONFLICT_HL_ANCHOR", "Conflict row — anchor"),
     ]),
 ]
 

@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
     QRadioButton, QButtonGroup, QProgressBar, QFrame,
 )
 
-from gui_qt.theme_qt import active_palette, _c
+from gui_qt.theme_qt import active_palette, _c, button_qss, ok_text, err_text
 from gui_qt.safe_emit import safe_emit
 from Utils.wizard_archives import (
     fetch_latest_github_asset, find_archive, get_downloads_dir,
@@ -38,8 +38,6 @@ from Utils.wizard_archives import (
 if TYPE_CHECKING:
     from Games.base_game import BaseGame
 
-_GREEN = "#6bc76b"
-_RED = "#e06c6c"
 
 
 class ScriptExtenderView(QWidget):
@@ -115,9 +113,7 @@ class ScriptExtenderView(QWidget):
         close = QPushButton(self.tr("✕ Close"))
         close.setCursor(Qt.PointingHandCursor)
         close.setStyleSheet(
-            "QPushButton{background:#6b3333; color:#fff; border:none;"
-            " padding:5px 12px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#8c4444;}")
+            button_qss("BTN_DANGER", padding="5px 12px"))
         close.clicked.connect(self._finish)
         hb.addWidget(close)
         v.addWidget(bar)
@@ -158,10 +154,7 @@ class ScriptExtenderView(QWidget):
         b = QPushButton(text)
         b.setCursor(Qt.PointingHandCursor)
         b.setStyleSheet(
-            "QPushButton{background:#2d6a9e; color:#fff; border:none;"
-            " padding:8px 24px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#3a7fb8;}"
-            "QPushButton:disabled{background:#44484f; color:#9aa0a6;}")
+            button_qss("BTN_INFO"))
         return b
 
     def _mode_box(self) -> tuple[QWidget, QButtonGroup]:
@@ -299,13 +292,13 @@ class ScriptExtenderView(QWidget):
                 self._archive_path = dest
                 safe_emit(self._dl_status_sig,
                     f"Downloaded {filename}.\nChoose the install destination, "
-                    "then click Next.", _GREEN)
+                    "then click Next.", ok_text())
                 safe_emit(self._dl_done_sig, True)
             except Exception as exc:
                 self._log(f"Wizard: download failed: {exc}")
                 safe_emit(self._dl_status_sig,
                     f"Download failed:\n{exc}\n\nUse Browse… to pick an "
-                    "archive you downloaded manually.", _RED)
+                    "archive you downloaded manually.", err_text())
                 safe_emit(self._dl_done_sig, False)
 
         threading.Thread(target=worker, daemon=True,
@@ -384,14 +377,14 @@ class ScriptExtenderView(QWidget):
             self._archive_path = found
             self._set_lbl(self._locate_status,
                           f"Found: {found.name}\nClick Next to install it.",
-                          _GREEN)
+                          ok_text())
             self._locate_next_btn.setEnabled(True)
         else:
             kw = ", ".join(self._archive_keywords) or "?"
             self._set_lbl(self._locate_status,
                           f"No archive matching '{kw}' was found in your "
                           "Downloads folder.\nDownload it first, then Try "
-                          "Again — or Browse… to pick the file.", _RED)
+                          "Again — or Browse… to pick the file.", err_text())
             self._locate_next_btn.setEnabled(False)
 
     # ---- browse (shared) -----------------------------------------------------------
@@ -411,11 +404,11 @@ class ScriptExtenderView(QWidget):
         if idx == self._PG_DL_AUTO:
             self._set_lbl(self._dl_status,
                           f"Selected: {name}\nChoose the install destination, "
-                          "then click Next.", _GREEN)
+                          "then click Next.", ok_text())
             self._dl_next_btn.setEnabled(True)
         elif idx == self._PG_LOCATE:
             self._set_lbl(self._locate_status,
-                          f"Selected: {name}\nClick Next to install it.", _GREEN)
+                          f"Selected: {name}\nClick Next to install it.", ok_text())
             self._locate_next_btn.setEnabled(True)
 
     # ---- page 4: extract ---------------------------------------------------------
@@ -427,10 +420,7 @@ class ScriptExtenderView(QWidget):
         self._done_btn.setEnabled(False)
         self._done_btn.setCursor(Qt.PointingHandCursor)
         self._done_btn.setStyleSheet(
-            "QPushButton{background:#2d7a2d; color:#fff; border:none;"
-            " padding:8px 24px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#3a9e3a;}"
-            "QPushButton:disabled{background:#44484f; color:#9aa0a6;}")
+            button_qss("BTN_SUCCESS"))
         self._done_btn.clicked.connect(self._finish)
         lay.addWidget(self._done_btn, 0, Qt.AlignHCenter)
         return page
@@ -457,11 +447,11 @@ class ScriptExtenderView(QWidget):
                 safe_emit(self._ex_status_sig,
                     f"Script extender installed successfully!\n"
                     f"{file_count} file(s) extracted to the {dest_label}.\n\n"
-                    "Click Done to close.", _GREEN)
+                    "Click Done to close.", ok_text())
                 safe_emit(self._ex_done_sig, True)
             except Exception as exc:
                 self._log(f"Wizard error: {exc}")
-                safe_emit(self._ex_status_sig, f"Error: {exc}", _RED)
+                safe_emit(self._ex_status_sig, f"Error: {exc}", err_text())
                 safe_emit(self._ex_done_sig, False)
 
         threading.Thread(target=worker, daemon=True,

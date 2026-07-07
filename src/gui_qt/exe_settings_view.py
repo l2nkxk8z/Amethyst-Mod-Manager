@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QComboBox, QLineEdit, QPlainTextEdit, QMenu, QScrollArea,
 )
 
-from gui_qt.theme_qt import active_palette, _c, danger_close_button
+from gui_qt.theme_qt import active_palette, _c, danger_close_button, button_qss
 from gui_qt.wheel_guard import no_wheel
 from Utils import exe_launch
 from Utils.wine_paths import to_wine_path
@@ -214,10 +214,7 @@ class ExeSettingsView(QWidget):
         fb = QHBoxLayout(foot); fb.setContentsMargins(12, 8, 12, 8); fb.setSpacing(6)
         remove = QPushButton(self.tr("Remove EXE"))
         remove.setCursor(Qt.PointingHandCursor)
-        remove.setStyleSheet(
-            "QPushButton{background:#6b3333; color:#fff; border:none;"
-            " padding:6px 14px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#8c4444;}")
+        remove.setStyleSheet(button_qss("BTN_DANGER", padding="6px 14px"))
         remove.clicked.connect(self._on_remove)
         fb.addWidget(remove)
         fb.addStretch(1)

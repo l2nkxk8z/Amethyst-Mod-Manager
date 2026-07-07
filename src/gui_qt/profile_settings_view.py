@@ -113,11 +113,11 @@ class ProfileSettingsView(QWidget):
         #ProfileRow {{ background: {c('BG_PANEL')}; }}
         #ProfileRow[alt="true"] {{ background: {c('BG_DEEP')}; }}
         #RenameBar {{ background: {c('BG_HEADER')}; }}
-        #DangerButton {{ background: #6b3333; color: #fff; border: none;
+        #DangerButton {{ background: {c('BTN_DANGER')}; color: {c('TEXT_ON_ACCENT')}; border: none;
                          border-radius: 4px; padding: 4px 12px; font-size: 12px;
                          font-weight: 600; }}
-        #DangerButton:hover {{ background: #8c4444; }}
-        #DangerButton:disabled {{ background: #3a3a3a; color: {c('TEXT_DIM')}; }}
+        #DangerButton:hover {{ background: {c('BTN_DANGER_HOV')}; }}
+        #DangerButton:disabled {{ background: {c('BTN_GREY')}; color: {c('TEXT_DIM')}; }}
         """
 
     def _build(self):

@@ -33,15 +33,13 @@ from PySide6.QtWidgets import (
     QStackedWidget,
 )
 
-from gui_qt.theme_qt import active_palette, _c
+from gui_qt.theme_qt import active_palette, _c, button_qss, ok_text, err_text
 from gui_qt.safe_emit import safe_emit
 from Utils.xedit_tools import tool_exe_path
 
 if TYPE_CHECKING:
     from Games.base_game import BaseGame
 
-_GREEN = "#6bc76b"
-_RED = "#e06c6c"
 
 _NEXUS_URL = "https://www.nexusmods.com/skyrimspecialedition/mods/68518?tab=files"
 _XLODGEN_GITHUB_API = "https://api.github.com/repos/sheson/xLODGen/releases/latest"
@@ -126,9 +124,7 @@ class DynDOLODView(QWidget):
         close = QPushButton(self.tr("✕ Close"))
         close.setCursor(Qt.PointingHandCursor)
         close.setStyleSheet(
-            "QPushButton{background:#6b3333; color:#fff; border:none;"
-            " padding:5px 12px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#8c4444;}")
+            button_qss("BTN_DANGER", padding="5px 12px"))
         close.clicked.connect(self._finish)
         hb.addWidget(close)
         v.addWidget(bar)
@@ -180,10 +176,7 @@ class DynDOLODView(QWidget):
         b = QPushButton(text)
         b.setCursor(Qt.PointingHandCursor)
         b.setStyleSheet(
-            "QPushButton{background:#2d6a9e; color:#fff; border:none;"
-            " padding:8px 24px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#3a7fb8;}"
-            "QPushButton:disabled{background:#44484f; color:#9aa0a6;}")
+            button_qss("BTN_INFO"))
         return b
 
     # ---- step 1a: manual download (TexGen / DynDOLOD) ---------------------------
@@ -202,9 +195,7 @@ class DynDOLODView(QWidget):
         open_btn = QPushButton(self.tr("Open Download Page"))
         open_btn.setCursor(Qt.PointingHandCursor)
         open_btn.setStyleSheet(
-            "QPushButton{background:#da8e35; color:#fff; border:none;"
-            " padding:8px 24px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#e5a04a;}")
+            button_qss("BTN_WARN"))
         open_btn.clicked.connect(self._open_download_page)
         lay.addWidget(open_btn, 0, Qt.AlignHCenter)
 
@@ -277,10 +268,10 @@ class DynDOLODView(QWidget):
 
                 self._log(f"{name} Wizard: extracted {file_count} file(s).")
                 safe_emit(self._dl_status_sig,
-                    f"Downloaded and extracted {tag}.", _GREEN)
+                    f"Downloaded and extracted {tag}.", ok_text())
                 safe_emit(self._dl_done_sig, True)
             except Exception as exc:
-                safe_emit(self._dl_status_sig, f"Error: {exc}", _RED)
+                safe_emit(self._dl_status_sig, f"Error: {exc}", err_text())
                 self._log(f"{name} Wizard: download error: {exc}")
                 safe_emit(self._dl_done_sig, False)
 
@@ -322,7 +313,7 @@ class DynDOLODView(QWidget):
         found = find_archive(get_downloads_dir(), [self._archive_kw])
         if found:
             self._archive_path = found
-            self._set_status(self._locate_status, self.tr("Found: {0}").format(found.name), _GREEN)
+            self._set_status(self._locate_status, self.tr("Found: {0}").format(found.name), ok_text())
             QTimer.singleShot(
                 300, lambda: None if self._closing
                 else self._goto_step(_PG_EXTRACT))
@@ -333,7 +324,7 @@ class DynDOLODView(QWidget):
                 self.tr("DynDOLOD archive not found in Downloads.\n"
                 "Make sure you downloaded it, then press Try Again,\n"
                 "or use Browse to select it manually."),
-                _RED)
+                err_text())
 
     def _browse_archive(self):
         from Utils.portal_filechooser import pick_file
@@ -344,7 +335,7 @@ class DynDOLODView(QWidget):
         if path and Path(path).is_file():
             self._archive_path = Path(path)
             self._set_status(self._locate_status,
-                             self.tr("Selected: {0}").format(self._archive_path.name), _GREEN)
+                             self.tr("Selected: {0}").format(self._archive_path.name), ok_text())
             QTimer.singleShot(
                 300, lambda: None if self._closing
                 else self._goto_step(_PG_EXTRACT))
@@ -386,10 +377,10 @@ class DynDOLODView(QWidget):
                 self._exe = exe
 
                 safe_emit(self._extract_status_sig,
-                    f"Extracted {file_count} file(s).", _GREEN)
+                    f"Extracted {file_count} file(s).", ok_text())
                 safe_emit(self._extract_done_sig, True)
             except Exception as exc:
-                safe_emit(self._extract_status_sig, f"Error: {exc}", _RED)
+                safe_emit(self._extract_status_sig, f"Error: {exc}", err_text())
                 self._log(f"{name} Wizard: extract error: {exc}")
                 safe_emit(self._extract_done_sig, False)
 
@@ -430,7 +421,7 @@ class DynDOLODView(QWidget):
         run_deploy = getattr(self._ctx, "run_deploy", None)
         if run_deploy is None:
             self._set_status(self._deploy_status,
-                             self.tr("Deploy is unavailable here."), _RED)
+                             self.tr("Deploy is unavailable here."), err_text())
             return
         self._deploy_btn.setEnabled(False)
         self._skip_btn.setEnabled(False)
@@ -441,17 +432,17 @@ class DynDOLODView(QWidget):
             if self._closing:
                 return
             if ok:
-                self._set_status(self._deploy_status, self.tr("Deploy complete."), _GREEN)
+                self._set_status(self._deploy_status, self.tr("Deploy complete."), ok_text())
                 self._goto_step(_PG_PROTON)
             else:
                 self._set_status(self._deploy_status,
-                                 self.tr("Deploy failed — see log."), _RED)
+                                 self.tr("Deploy failed — see log."), err_text())
                 self._deploy_btn.setEnabled(True)
                 self._skip_btn.setEnabled(True)
 
         if not run_deploy(_done):
             self._set_status(self._deploy_status,
-                             self.tr("Could not start deploy — see log."), _RED)
+                             self.tr("Could not start deploy — see log."), err_text())
             self._deploy_btn.setEnabled(True)
             self._skip_btn.setEnabled(True)
 
@@ -474,7 +465,7 @@ class DynDOLODView(QWidget):
                 self.tr('{0} was not found.\nPlease restart the wizard and install {1} first.').format(self._exe_name, self._app_dir))
             err.setAlignment(Qt.AlignCenter)
             err.setWordWrap(True)
-            err.setStyleSheet(f"color:{_RED};")
+            err.setStyleSheet(f"color:{err_text()};")
             lay.addWidget(err)
             return
         from wizards_qt.proton_step import ProtonStepWidget
@@ -499,10 +490,7 @@ class DynDOLODView(QWidget):
         self._done_btn.setCursor(Qt.PointingHandCursor)
         self._done_btn.setEnabled(False)
         self._done_btn.setStyleSheet(
-            "QPushButton{background:#2d7a2d; color:#fff; border:none;"
-            " padding:8px 24px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#3a9e3a;}"
-            "QPushButton:disabled{background:#44484f; color:#9aa0a6;}")
+            button_qss("BTN_SUCCESS"))
         self._done_btn.clicked.connect(self._finish)
         lay.addWidget(self._done_btn, 0, Qt.AlignHCenter)
         return page
@@ -511,7 +499,7 @@ class DynDOLODView(QWidget):
         exe, game = self._exe, self._game
         if exe is None:
             self._set_status(self._run_status,
-                             self.tr("{0} was not found.").format(self._exe_name), _RED)
+                             self.tr("{0} was not found.").format(self._exe_name), err_text())
             return
         self._set_status(self._run_status, self.tr("Launching {0}…").format(self._name), "")
         name = self._name
@@ -531,13 +519,13 @@ class DynDOLODView(QWidget):
                 if result is None:
                     safe_emit(self._run_status_sig,
                         f"Could not find Proton '{proton_name}' — "
-                        "check that it is installed in Steam.", _RED)
+                        "check that it is installed in Steam.", err_text())
                     return
                 proton_script, compat_data, env = result
 
                 game_path = game.get_game_path()
                 if game_path is None:
-                    safe_emit(self._run_status_sig, "Game path not configured.", _RED)
+                    safe_emit(self._run_status_sig, "Game path not configured.", err_text())
                     return
 
                 staging = game.get_effective_mod_staging_path()
@@ -565,10 +553,10 @@ class DynDOLODView(QWidget):
                 shutdown_prefix_wineserver(proton_script, compat_data,
                                            log_fn=_wlog)
                 self._log(f"{name} Wizard: {exe.name} closed.")
-                safe_emit(self._run_status_sig, f"{name} finished.", _GREEN)
+                safe_emit(self._run_status_sig, f"{name} finished.", ok_text())
                 safe_emit(self._run_finished_sig)
             except Exception as exc:
-                safe_emit(self._run_status_sig, f"Launch error: {exc}", _RED)
+                safe_emit(self._run_status_sig, f"Launch error: {exc}", err_text())
                 self._log(f"{name} Wizard: launch error: {exc}")
 
         threading.Thread(target=worker, daemon=True,
@@ -579,7 +567,7 @@ class DynDOLODView(QWidget):
         self._set_status(
             self._run_status,
             self.tr('{0} is running.\nClose it when you are done, then click Done.').format(self._name),
-            _GREEN)
+            ok_text())
         self._done_btn.setEnabled(True)
 
     # ---- shared -------------------------------------------------------------

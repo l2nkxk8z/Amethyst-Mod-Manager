@@ -30,13 +30,17 @@ from PySide6.QtWidgets import (
 )
 
 from gui_qt.safe_emit import safe_emit
-from gui_qt.theme_qt import active_palette, _c
+from gui_qt.theme_qt import active_palette, _c, button_qss, ok_text, err_text
 
 if TYPE_CHECKING:
     from Games.base_game import BaseGame
 
-GREEN = "#6bc76b"
-RED = "#e06c6c"
+# Back-compat status-text colours re-exported for the many wizard views that do
+# ``from wizards_qt._view_base import GREEN, RED``. Prefer ok_text()/err_text()
+# in new code — these module constants resolve once at import from the active
+# theme, which is fine for wizards (created after the theme is applied).
+GREEN = ok_text()
+RED = err_text()
 
 
 class WizardViewBase(QWidget):
@@ -88,10 +92,7 @@ class WizardViewBase(QWidget):
         hb.addStretch(1)
         close = QPushButton(self.tr("✕ Close"))
         close.setCursor(Qt.PointingHandCursor)
-        close.setStyleSheet(
-            "QPushButton{background:#6b3333; color:#fff; border:none;"
-            " padding:5px 12px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#8c4444;}")
+        close.setStyleSheet(button_qss("BTN_DANGER", pal=p, padding="5px 12px"))
         close.clicked.connect(self._finish)
         hb.addWidget(close)
         v.addWidget(bar)
@@ -151,30 +152,19 @@ class WizardViewBase(QWidget):
     def _accent_btn(self, text: str) -> QPushButton:
         b = QPushButton(text)
         b.setCursor(Qt.PointingHandCursor)
-        b.setStyleSheet(
-            "QPushButton{background:#2d6a9e; color:#fff; border:none;"
-            " padding:8px 24px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#3a7fb8;}"
-            "QPushButton:disabled{background:#44484f; color:#9aa0a6;}")
+        b.setStyleSheet(button_qss("BTN_INFO"))
         return b
 
     def _green_btn(self, text: str = "Done") -> QPushButton:
         b = QPushButton(text)
         b.setCursor(Qt.PointingHandCursor)
-        b.setStyleSheet(
-            "QPushButton{background:#2d7a2d; color:#fff; border:none;"
-            " padding:8px 24px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#3a9e3a;}"
-            "QPushButton:disabled{background:#44484f; color:#9aa0a6;}")
+        b.setStyleSheet(button_qss("BTN_SUCCESS"))
         return b
 
     def _orange_btn(self, text: str) -> QPushButton:
         b = QPushButton(text)
         b.setCursor(Qt.PointingHandCursor)
-        b.setStyleSheet(
-            "QPushButton{background:#da8e35; color:#fff; border:none;"
-            " padding:8px 24px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#e5a04a;}")
+        b.setStyleSheet(button_qss("BTN_WARN"))
         return b
 
     # ---- common page: manual download -------------------------------------------
@@ -249,7 +239,7 @@ class WizardViewBase(QWidget):
             self._archive_path = None
             if self._locate_next_btn is not None:
                 self._locate_next_btn.setEnabled(False)
-            self._set_status(self._locate_status, self._locate_not_found, RED)
+            self._set_status(self._locate_status, self._locate_not_found, err_text())
 
     def _browse_archive(self):
         from Utils.portal_filechooser import pick_file
@@ -263,7 +253,7 @@ class WizardViewBase(QWidget):
 
     def _archive_found(self, path: Path, label: str):
         self._archive_path = path
-        self._set_status(self._locate_status, label, GREEN)
+        self._set_status(self._locate_status, label, ok_text())
         if self._locate_next_btn is not None:
             self._locate_next_btn.setEnabled(True)
         else:
@@ -335,10 +325,10 @@ class WizardViewBase(QWidget):
                             f"Check that the archive contains {exe_name}.")
                     self._exe = exe
                 safe_emit(self._extract_status_sig,
-                          f"Extracted {file_count} file(s).", GREEN)
+                          f"Extracted {file_count} file(s).", ok_text())
                 safe_emit(self._extract_done_sig, True)
             except Exception as exc:
-                safe_emit(self._extract_status_sig, f"Error: {exc}", RED)
+                safe_emit(self._extract_status_sig, f"Error: {exc}", err_text())
                 self._log(f"{tool_label} Wizard: extract error: {exc}")
                 safe_emit(self._extract_done_sig, False)
 
@@ -406,10 +396,10 @@ class WizardViewBase(QWidget):
                 self._exe = dest / exe_name
 
                 self._log(f"{tool_label} Wizard: extracted {file_count} file(s).")
-                safe_emit(status_sig, f"Downloaded and extracted {tag}.", GREEN)
+                safe_emit(status_sig, f"Downloaded and extracted {tag}.", ok_text())
                 safe_emit(done_sig, True)
             except Exception as exc:
-                safe_emit(status_sig, f"Error: {exc}", RED)
+                safe_emit(status_sig, f"Error: {exc}", err_text())
                 self._log(f"{tool_label} Wizard: download error: {exc}")
                 safe_emit(done_sig, False)
 
@@ -440,7 +430,7 @@ class WizardViewBase(QWidget):
                          f"{exe_name} was not found.\nReopen this wizard.")
             err.setAlignment(Qt.AlignCenter)
             err.setWordWrap(True)
-            err.setStyleSheet(f"color:{RED};")
+            err.setStyleSheet(f"color:{err_text()};")
             lay.addWidget(err)
             return
         from wizards_qt.proton_step import ProtonStepWidget
@@ -459,7 +449,7 @@ class WizardViewBase(QWidget):
         thread. Returns False when no deploy hook is available."""
         run_deploy = getattr(self._ctx, "run_deploy", None)
         if run_deploy is None:
-            self._set_status(status_lbl, self.tr("Deploy is unavailable here."), RED)
+            self._set_status(status_lbl, self.tr("Deploy is unavailable here."), err_text())
             return False
         self._set_status(status_lbl, self.tr("Deploying…"))
 
@@ -467,15 +457,15 @@ class WizardViewBase(QWidget):
             if self._closing:
                 return
             if ok:
-                self._set_status(status_lbl, self.tr("Deploy complete."), GREEN)
+                self._set_status(status_lbl, self.tr("Deploy complete."), ok_text())
                 on_ok()
             else:
-                self._set_status(status_lbl, self.tr("Deploy failed — see log."), RED)
+                self._set_status(status_lbl, self.tr("Deploy failed — see log."), err_text())
                 if on_fail is not None:
                     on_fail()
 
         if not run_deploy(_done):
-            self._set_status(status_lbl, self.tr("Could not start deploy — see log."), RED)
+            self._set_status(status_lbl, self.tr("Could not start deploy — see log."), err_text())
             if on_fail is not None:
                 on_fail()
             return False

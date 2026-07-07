@@ -144,6 +144,7 @@ class _ArchiveDelegate(QStyledItemDelegate):
         self.c_text = QColor(_c(p, "TEXT_MAIN"))
         self.c_dim = QColor("#9a9a9a")
         self.c_sel = QColor(_c(p, "BG_SELECT"))
+        self.c_arrow = _c(p, "DROPDOWN_ARROW")   # expand/collapse arrow tint
 
     def paint(self, p, opt, index):
         r = opt.rect
@@ -158,7 +159,8 @@ class _ArchiveDelegate(QStyledItemDelegate):
         if node.is_dir and index.model().rowCount(index) > 0:
             a = QRect(x, r.top() + (r.height() - ARROW_SZ) // 2, ARROW_SZ, ARROW_SZ)
             expanded = self._view.isExpanded(index)
-            ico = icon("arrow.png" if expanded else "right.png", ARROW_SZ)
+            ico = icon("arrow.png" if expanded else "right.png", ARROW_SZ,
+                       color=self.c_arrow)
             if not ico.isNull():
                 ico.paint(p, a)
         x += ARROW_SZ + 2

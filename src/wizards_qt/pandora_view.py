@@ -28,15 +28,13 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QStackedWidget,
 )
 
-from gui_qt.theme_qt import active_palette, _c
+from gui_qt.theme_qt import active_palette, _c, button_qss, ok_text, err_text
 from gui_qt.safe_emit import safe_emit
 from Utils.pandora_tools import EXE_NAME, find_pandora_exe
 
 if TYPE_CHECKING:
     from Games.base_game import BaseGame
 
-_GREEN = "#6bc76b"
-_RED = "#e06c6c"
 
 
 class PandoraView(QWidget):
@@ -101,9 +99,7 @@ class PandoraView(QWidget):
         close = QPushButton(self.tr("✕ Close"))
         close.setCursor(Qt.PointingHandCursor)
         close.setStyleSheet(
-            "QPushButton{background:#6b3333; color:#fff; border:none;"
-            " padding:5px 12px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#8c4444;}")
+            button_qss("BTN_DANGER", padding="5px 12px"))
         close.clicked.connect(self._on_close)
         hb.addWidget(close)
         v.addWidget(bar)
@@ -165,10 +161,7 @@ class PandoraView(QWidget):
         self._deploy_btn = QPushButton(self.tr("Deploy"))
         self._deploy_btn.setCursor(Qt.PointingHandCursor)
         self._deploy_btn.setStyleSheet(
-            "QPushButton{background:#2d6a9e; color:#fff; border:none;"
-            " padding:8px 24px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#3a7fb8;}"
-            "QPushButton:disabled{background:#44484f; color:#9aa0a6;}")
+            button_qss("BTN_INFO"))
         self._deploy_btn.clicked.connect(self._start_deploy)
         rh.addWidget(self._deploy_btn)
         rh.addStretch(1)
@@ -178,7 +171,7 @@ class PandoraView(QWidget):
     def _start_deploy(self):
         run_deploy = getattr(self._ctx, "run_deploy", None)
         if run_deploy is None:
-            safe_emit(self._deploy_status_sig, "Deploy is unavailable here.", _RED)
+            safe_emit(self._deploy_status_sig, "Deploy is unavailable here.", err_text())
             return
         self._busy = True
         self._deploy_btn.setEnabled(False)
@@ -189,18 +182,18 @@ class PandoraView(QWidget):
             # Fired on the UI thread by the app's deploy completion handler.
             self._busy = False
             if ok:
-                self._set_status(self._deploy_status, self.tr("Deploy complete."), _GREEN)
+                self._set_status(self._deploy_status, self.tr("Deploy complete."), ok_text())
                 self._goto_step(1)
             else:
                 self._set_status(self._deploy_status,
-                                 self.tr("Deploy failed — see log."), _RED)
+                                 self.tr("Deploy failed — see log."), err_text())
                 self._deploy_btn.setEnabled(True)
                 self._skip_btn.setEnabled(True)
 
         if not run_deploy(_done):
             self._busy = False
             self._set_status(self._deploy_status,
-                             self.tr("Could not start deploy — see log."), _RED)
+                             self.tr("Could not start deploy — see log."), err_text())
             self._deploy_btn.setEnabled(True)
             self._skip_btn.setEnabled(True)
 
@@ -213,7 +206,7 @@ class PandoraView(QWidget):
             err = QLabel(self.tr("'{0}' was not found in your mod staging folder.\n\nInstall Pandora Behaviour Engine+ as a mod, then reopen this wizard.").format(EXE_NAME))
             err.setAlignment(Qt.AlignHCenter)
             err.setWordWrap(True)
-            err.setStyleSheet(f"color:{_RED};")
+            err.setStyleSheet(f"color:{err_text()};")
             lay.addWidget(err)
             lay.addStretch(1)
             return page
@@ -259,23 +252,23 @@ class PandoraView(QWidget):
                     safe_emit(self._deps_status_sig,
                         f"Could not find Proton '{proton_name}' — check that "
                         "it is installed in Steam, then reopen this wizard.",
-                        _RED)
+                        err_text())
                     return
                 self._prefix_env = result
                 proton_script, compat_data, env = result
                 if net10_installed(compat_data):
                     safe_emit(self._deps_status_sig,
-                        ".NET 10 already installed — skipping.", _GREEN)
+                        ".NET 10 already installed — skipping.", ok_text())
                 else:
                     install_net10(
                         proton_script, compat_data, env,
                         log_fn=lambda m: self._log(f"Pandora Wizard: {m}"),
                         status_fn=lambda t: safe_emit(self._deps_status_sig, t, ""))
                     safe_emit(self._deps_status_sig,
-                        ".NET 10 installed successfully.", _GREEN)
+                        ".NET 10 installed successfully.", ok_text())
                 safe_emit(self._goto_step_sig, 3)
             except Exception as exc:
-                safe_emit(self._deps_status_sig, f"Error: {exc}", _RED)
+                safe_emit(self._deps_status_sig, f"Error: {exc}", err_text())
                 self._log(f"Pandora Wizard: .NET 10 install error: {exc}")
             finally:
                 self._busy = False
@@ -293,10 +286,7 @@ class PandoraView(QWidget):
         self._done_btn.setCursor(Qt.PointingHandCursor)
         self._done_btn.setEnabled(False)
         self._done_btn.setStyleSheet(
-            "QPushButton{background:#2d7a2d; color:#fff; border:none;"
-            " padding:8px 24px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#3a9e3a;}"
-            "QPushButton:disabled{background:#44484f; color:#9aa0a6;}")
+            button_qss("BTN_SUCCESS"))
         self._done_btn.clicked.connect(self._on_done)
         lay.addWidget(self._done_btn, 0, Qt.AlignHCenter)
         return page
@@ -313,7 +303,7 @@ class PandoraView(QWidget):
             try:
                 if prefix_env is None:
                     safe_emit(self._run_status_sig,
-                        "Prefix was not prepared — go back and retry.", _RED)
+                        "Prefix was not prepared — go back and retry.", err_text())
                     return
                 proton_script, compat_data, env = prefix_env
                 self._log(f"Pandora Wizard: launching {exe} via Proton")
@@ -324,12 +314,12 @@ class PandoraView(QWidget):
                 if rc != 0:
                     safe_emit(self._run_status_sig,
                         f"Pandora exited with error (code {rc}).\nSee the "
-                        "log for details. Click Done to close.", _RED)
+                        "log for details. Click Done to close.", err_text())
                 else:
                     safe_emit(self._run_status_sig,
-                        "Pandora finished. Click Done to close.", _GREEN)
+                        "Pandora finished. Click Done to close.", ok_text())
             except Exception as exc:
-                safe_emit(self._run_status_sig, f"Launch error: {exc}", _RED)
+                safe_emit(self._run_status_sig, f"Launch error: {exc}", err_text())
                 self._log(f"Pandora Wizard: launch error: {exc}")
             finally:
                 self._busy = False
@@ -342,7 +332,7 @@ class PandoraView(QWidget):
         self._set_status(
             self._run_status,
             self.tr("Pandora is running.\nClose it when you are done, then click Done."),
-            _GREEN)
+            ok_text())
         self._done_btn.setEnabled(True)
 
     # ---- shared -------------------------------------------------------------

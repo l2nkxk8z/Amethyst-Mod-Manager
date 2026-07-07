@@ -15,6 +15,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QPushButton, QWidget
 
 from gui_qt.safe_emit import safe_emit
+from gui_qt.theme_qt import button_qss
 from wizards_qt._view_base import GREEN, RED, WizardViewBase
 from Utils.fnv4gb_tools import BACKUP_NAME, EXE_NAME
 
@@ -65,10 +66,7 @@ class Fnv4GbView(WizardViewBase):
         self._restore_btn.setCursor(Qt.PointingHandCursor)
         self._restore_btn.setEnabled(False)
         self._restore_btn.setStyleSheet(
-            "QPushButton{background:#7a3a2d; color:#fff; border:none;"
-            " padding:8px 20px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#9e4a38;}"
-            "QPushButton:disabled{background:#44484f; color:#9aa0a6;}")
+            button_qss("BTN_WARN_ORANGE", padding="8px 20px"))
         self._restore_btn.clicked.connect(self._on_restore)
         rh.addWidget(self._restore_btn)
         self._apply_btn = self._accent_btn(self.tr("Apply 4GB Patch"))

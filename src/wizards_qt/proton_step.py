@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QLineEdit,
 )
 
-from gui_qt.theme_qt import active_palette, _c
+from gui_qt.theme_qt import active_palette, _c, button_qss, ok_text, err_text
 from gui_qt.safe_emit import safe_emit
 from Utils.exe_launch import (
     PREFIX_MODE_GAME, PREFIX_MODE_ISOLATED, PREFIX_MODE_SHARED,
@@ -36,8 +36,6 @@ from Utils.exe_launch import (
 if TYPE_CHECKING:
     from Games.base_game import BaseGame
 
-_GREEN = "#6bc76b"
-_RED = "#e06c6c"
 
 
 class ProtonStepWidget(QWidget):
@@ -91,7 +89,7 @@ class ProtonStepWidget(QWidget):
                          "this wizard."))
             err.setAlignment(Qt.AlignHCenter)
             err.setWordWrap(True)
-            err.setStyleSheet(f"color:{_RED};")
+            err.setStyleSheet(f"color:{err_text()};")
             v.addWidget(err)
             v.addStretch(1)
             return
@@ -185,10 +183,7 @@ class ProtonStepWidget(QWidget):
         v.addStretch(1)
         cont = QPushButton(self.tr("Continue"))
         cont.setCursor(Qt.PointingHandCursor)
-        cont.setStyleSheet(
-            "QPushButton{background:#2d6a9e; color:#fff; border:none;"
-            " padding:8px 24px; border-radius:4px; font-weight:600;}"
-            "QPushButton:hover{background:#3a7fb8;}")
+        cont.setStyleSheet(button_qss("BTN_INFO"))
         cont.clicked.connect(self._on_chosen)
         v.addWidget(cont, 0, Qt.AlignHCenter)
 
@@ -306,9 +301,7 @@ class ProtonStepWidget(QWidget):
         if not self._confirm_delete:
             self._confirm_delete = True
             self._delete_btn.setText(self.tr("Confirm Delete"))
-            self._delete_btn.setStyleSheet(
-                "QPushButton{background:#7a2d2d; color:#fff;}"
-                "QPushButton:hover{background:#9e3a3a;}")
+            self._delete_btn.setStyleSheet(button_qss("BTN_DANGER", padding="0px"))
             self._set_prefix_status(self.tr("Click again to delete '{0}'.").format(d.name))
             return
         self._confirm_delete = False
@@ -339,10 +332,10 @@ class ProtonStepWidget(QWidget):
             self._log(f"{self._tool_display_name} Wizard: deleted prefix {msg}")
             self._set_prefix_status(
                 self.tr("Prefix deleted — a fresh one is created on the next step."),
-                _GREEN)
+                ok_text())
         else:
             self._log(f"{self._tool_display_name} Wizard: prefix delete error: {msg}")
-            self._set_prefix_status(self.tr("Could not delete prefix: {0}").format(msg), _RED)
+            self._set_prefix_status(self.tr("Could not delete prefix: {0}").format(msg), err_text())
         d = self._selected_prefix_dir()
         self._delete_btn.setText(self.tr("Delete Prefix"))
         self._delete_btn.setStyleSheet("")
