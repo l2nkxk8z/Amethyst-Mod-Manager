@@ -135,6 +135,8 @@ modules:
         printf '%s\n' '#!/bin/sh' \
           'export MOD_MANAGER_GAMES="/app/share/amethyst-mod-manager/Games"' \
           'export XDG_DATA_DIRS=/app/share:/usr/share' \
+          ': "${QT_QPA_PLATFORM:=xcb}"' \
+          'export QT_QPA_PLATFORM' \
           'cd /app/share/amethyst-mod-manager' \
           'exec python3 run_qt.py "$@"' > /app/bin/amethyst-mod-manager
       - chmod +x /app/bin/amethyst-mod-manager
