@@ -1901,6 +1901,11 @@ class NexusAPI:
         """
         if sort_key not in self._TOP_MODS_SORT_KEYS:
             sort_key = "downloads"
+        # The `name` WILDCARD operator (below) is rejected by the Nexus GraphQL
+        # server for values shorter than 2 characters ("Wildcard value must have
+        # 2 or more characters"). Short-circuit rather than issue a doomed query.
+        if len((query_text or "").strip()) < 2:
+            return []
         base_filter = self._build_mods_filter(game_domain, category_names)
         # Inject the name search into the filter.
         #

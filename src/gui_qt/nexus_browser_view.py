@@ -464,13 +464,17 @@ class NexusBrowserView(QWidget):
         if t is None:
             t = QTimer(self)
             t.setSingleShot(True)
-            t.setInterval(300)
+            t.setInterval(450)
             t.timeout.connect(self._do_search_now)
             self._search_timer = t
         t.start()
 
     def _do_search_now(self):
         q = self._search.text().strip()
+        # Nexus' WILDCARD name filter rejects text terms shorter than 2 chars.
+        # Numeric mod-id lookups use a separate path, so single digits are fine.
+        if q and not q.isdigit() and len(q) < 2:
+            return
         if q == self._query:
             return
         self._query = q
