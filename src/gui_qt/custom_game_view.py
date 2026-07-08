@@ -175,6 +175,7 @@ class CustomGameView(QWidget):
 
         # Dynamic-table row state.
         self._routing_rows: list[dict] = []
+        self._whitelist_rows: list[dict] = []
         self._framework_rows: list[dict] = []
 
         self._img_sig = _ImageSignals()
@@ -449,6 +450,43 @@ class CustomGameView(QWidget):
         v.addWidget(self._routing_container)
         v.addWidget(self._divider())
 
+        # --- Restore Whitelist ---
+        v.addWidget(self._section_header(self.tr("Restore Whitelist")))
+        v.addWidget(self._hint(
+            self.tr("Protect runtime-generated files from being moved out of the "
+            "game folder on restore. Each rule anchors at a path relative to "
+            "the game root (empty = the game root) and matches folder names "
+            "(protecting the folder's whole contents), filenames, or "
+            "extensions directly at that path. Matching is case-insensitive "
+            "and anchored — the same name at any other path needs its own "
+            "rule. Folder and filename values accept wildcards (e.g. "
+            "ego_dlc* or *.log).")))
+        add_wl = QPushButton(self.tr("+ Add Rule"))
+        add_wl.setObjectName("FormButton")
+        add_wl.setCursor(Qt.PointingHandCursor)
+        add_wl.clicked.connect(lambda: self._add_whitelist_rule())
+        v.addWidget(add_wl, alignment=Qt.AlignLeft)
+        self._whitelist_container = QWidget()
+        self._whitelist_vbox = QVBoxLayout(self._whitelist_container)
+        self._whitelist_vbox.setContentsMargins(0, 0, 0, 0)
+        self._whitelist_vbox.setSpacing(2)
+        self._whitelist_header = QWidget()
+        wh = QHBoxLayout(self._whitelist_header)
+        wh.setContentsMargins(4, 0, 4, 0); wh.setSpacing(4)
+        wh.addSpacing(24 + 4)               # up/down button column
+        wl_path_lbl = QLabel(self.tr("Path in game root"))
+        wl_path_lbl.setStyleSheet(f"color:{self._c('TEXT_DIM')};")
+        wl_file_lbl = QLabel(self.tr("File/folder"))
+        wl_file_lbl.setStyleSheet(f"color:{self._c('TEXT_DIM')};")
+        wh.addWidget(wl_path_lbl, 1)
+        wh.addSpacing(self._TYPE_COMBO_W)   # match-type combo column
+        wh.addWidget(wl_file_lbl, 1)
+        wh.addStretch(0)
+        self._whitelist_header.setVisible(False)
+        v.addWidget(self._whitelist_header)
+        v.addWidget(self._whitelist_container)
+        v.addWidget(self._divider())
+
         # --- Framework Detection ---
         v.addWidget(self._section_header(self.tr("Framework Detection")))
         v.addWidget(self._hint(
@@ -648,6 +686,94 @@ class CustomGameView(QWidget):
             rules.append(rule)
         return rules
 
+    # ---- restore-whitelist rows --------------------------------------------
+    def _add_whitelist_rule(self, path="", match_type="folders", match_value=""):
+        row = QFrame(); row.setObjectName("RuleRow")
+        row.setFrameShape(QFrame.StyledPanel)
+        hb = QHBoxLayout(row); hb.setContentsMargins(4, 4, 4, 4); hb.setSpacing(4)
+
+        up = QPushButton(); up.setFixedWidth(24)
+        up.setIcon(icon_rotated("arrow.png", 180, 12, "#ffffff"))
+        up.setToolTip(self.tr("Move up"))
+        down = QPushButton(); down.setFixedWidth(24)
+        down.setIcon(icon_rotated("arrow.png", 0, 12, "#ffffff"))
+        down.setToolTip(self.tr("Move down"))
+
+        path_edit = self._mono_edit(self.tr("e.g. output/extensions"))
+        type_combo = QComboBox()
+        for _val, _lbl in (("folders", self.tr("folders")),
+                           ("filenames", self.tr("filenames")),
+                           ("extensions", self.tr("extensions"))):
+            type_combo.addItem(_lbl, userData=_val)
+        _ti = type_combo.findData(match_type)
+        type_combo.setCurrentIndex(_ti if _ti >= 0 else 0)
+        type_combo.setFixedWidth(self._TYPE_COMBO_W)
+        no_wheel(type_combo)
+        value_edit = self._mono_edit(self.tr("File/Folder"))
+        path_edit.setText(path)
+        value_edit.setText(match_value)
+
+        remove = QPushButton(); remove.setObjectName("DangerButton")
+        remove.setIcon(icon("close_white.png", 12))
+        remove.setToolTip(self.tr("Remove rule"))
+        remove.setFixedWidth(28)
+
+        vbtns = QVBoxLayout(); vbtns.setSpacing(0); vbtns.setContentsMargins(0, 0, 0, 0)
+        vbtns.addWidget(up); vbtns.addWidget(down)
+        hb.addLayout(vbtns)
+        hb.addWidget(path_edit, 1)
+        hb.addWidget(type_combo)
+        hb.addWidget(value_edit, 1)
+        hb.addWidget(remove)
+
+        rd = {"frame": row, "path": path_edit, "type": type_combo,
+              "value": value_edit}
+        self._whitelist_rows.append(rd)
+        self._whitelist_vbox.addWidget(row)
+        self._whitelist_header.setVisible(True)
+
+        up.clicked.connect(lambda: self._move_whitelist_rule(rd, -1))
+        down.clicked.connect(lambda: self._move_whitelist_rule(rd, 1))
+        remove.clicked.connect(lambda: self._remove_whitelist_rule(rd))
+
+    def _remove_whitelist_rule(self, rd):
+        if rd in self._whitelist_rows:
+            self._whitelist_rows.remove(rd)
+            self._whitelist_vbox.removeWidget(rd["frame"])
+            rd["frame"].deleteLater()
+            if not self._whitelist_rows:
+                self._whitelist_header.setVisible(False)
+
+    def _move_whitelist_rule(self, rd, delta):
+        rows = self._whitelist_rows
+        if rd not in rows:
+            return
+        i = rows.index(rd)
+        j = i + delta
+        if j < 0 or j >= len(rows):
+            return
+        rows[i], rows[j] = rows[j], rows[i]
+        self._whitelist_vbox.removeWidget(rd["frame"])
+        self._whitelist_vbox.insertWidget(j, rd["frame"])
+
+    def _collect_whitelist_rules(self) -> list[dict]:
+        rules = []
+        for rd in self._whitelist_rows:
+            path = rd["path"].text().strip()
+            match_type = rd["type"].currentData()
+            values = [v.strip() for v in rd["value"].text().split(",") if v.strip()]
+            if not values:
+                continue          # empty path means game root, but need a value
+            rule: dict = {"path": path}
+            if match_type == "extensions":
+                rule["extensions"] = values
+            elif match_type == "filenames":
+                rule["filenames"] = values
+            else:
+                rule["folders"] = values
+            rules.append(rule)
+        return rules
+
     # ---- framework rows ---------------------------------------------------
     def _add_framework(self, name="", path=""):
         row = QFrame(); row.setObjectName("FwRow")
@@ -746,6 +872,18 @@ class CustomGameView(QWidget):
                 include_siblings=bool(rule.get("include_siblings", False)),
                 to_prefix=bool(rule.get("to_prefix", False)))
 
+        for rule in e.get("restore_whitelist", []) or []:
+            if not isinstance(rule, dict):
+                continue
+            if rule.get("filenames"):
+                mt, mv = "filenames", ", ".join(rule["filenames"])
+            elif rule.get("extensions"):
+                mt, mv = "extensions", ", ".join(rule["extensions"])
+            else:
+                mt, mv = "folders", ", ".join(rule.get("folders") or [])
+            self._add_whitelist_rule(
+                path=rule.get("path", ""), match_type=mt, match_value=mv)
+
         fw = e.get("custom_frameworks", {})
         if isinstance(fw, dict):
             for name, path in fw.items():
@@ -837,6 +975,7 @@ class CustomGameView(QWidget):
                 self._casing_combo.currentData() or "upper",
             "wine_dll_overrides": _parse_dll_text(self._dll_edit.toPlainText()),
             "custom_routing_rules": self._collect_routing_rules(),
+            "restore_whitelist": self._collect_whitelist_rules(),
             "custom_frameworks": self._collect_frameworks(),
         }
 

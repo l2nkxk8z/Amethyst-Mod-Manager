@@ -1311,6 +1311,18 @@ The Creation Kit can also occasionally crash on startup under Proton (a known Wi
         <translation>File/folder</translation>
     </message>
     <message>
+        <source>Restore Whitelist</source>
+        <translation>Restore Whitelist</translation>
+    </message>
+    <message>
+        <source>Protect runtime-generated files from being moved out of the game folder on restore. Each rule anchors at a path relative to the game root (empty = the game root) and matches folder names (protecting the folder's whole contents), filenames, or extensions directly at that path. Matching is case-insensitive and anchored — the same name at any other path needs its own rule. Folder and filename values accept wildcards (e.g. ego_dlc* or *.log).</source>
+        <translation>Protect runtime-generated files from being moved out of the game folder on restore. Each rule anchors at a path relative to the game root (empty = the game root) and matches folder names (protecting the folder's whole contents), filenames, or extensions directly at that path. Matching is case-insensitive and anchored — the same name at any other path needs its own rule. Folder and filename values accept wildcards (e.g. ego_dlc* or *.log).</translation>
+    </message>
+    <message>
+        <source>Path in game root</source>
+        <translation>Path in game root</translation>
+    </message>
+    <message>
         <source>Framework Detection</source>
         <translation>Framework Detection</translation>
     </message>
@@ -1397,6 +1409,10 @@ The Creation Kit can also occasionally crash on startup under Proton (a known Wi
     <message>
         <source>Remove rule</source>
         <translation>Remove rule</translation>
+    </message>
+    <message>
+        <source>e.g. output/extensions</source>
+        <translation>e.g. output/extensions</translation>
     </message>
     <message>
         <source>e.g. Script Extender</source>
@@ -1544,6 +1560,71 @@ The Creation Kit can also occasionally crash on startup under Proton (a known Wi
     <message>
         <source>Scan default Downloads folder ({0})</source>
         <translation>Scan default Downloads folder ({0})</translation>
+    </message>
+</context>
+<context>
+    <name>DtkitPatchView</name>
+    <message>
+        <source>Step 1: Deploy mods</source>
+        <translation>Step 1: Deploy mods</translation>
+    </message>
+    <message>
+        <source>dtkit-patch.exe ships with the Darktide Mod Loader and runs under Proton, so it always matches your installed version.
+
+Your mods are deployed first so the patcher and the bundle database are present in the game folder.</source>
+        <translation>dtkit-patch.exe ships with the Darktide Mod Loader and runs under Proton, so it always matches your installed version.
+
+Your mods are deployed first so the patcher and the bundle database are present in the game folder.</translation>
+    </message>
+    <message>
+        <source>Step 2: Toggle bundle patch</source>
+        <translation>Step 2: Toggle bundle patch</translation>
+    </message>
+    <message>
+        <source>Patcher:
+{0}
+
+Game folder (cwd):
+{1}
+
+Toggle flips the patch on or off (same as the Mod Loader's toggle_darktide_mods.bat). Patch to enable mods; toggle again to disable. Re-run after every game update.</source>
+        <translation>Patcher:
+{0}
+
+Game folder (cwd):
+{1}
+
+Toggle flips the patch on or off (same as the Mod Loader's toggle_darktide_mods.bat). Patch to enable mods; toggle again to disable. Re-run after every game update.</translation>
+    </message>
+    <message>
+        <source>Done</source>
+        <translation>Done</translation>
+    </message>
+    <message>
+        <source>Toggle Patch</source>
+        <translation>Toggle Patch</translation>
+    </message>
+    <message>
+        <source>Deploy finished, but tools/dtkit-patch.exe was not found in the game folder.
+Make sure the Darktide Mod Loader mod is enabled.</source>
+        <translation>Deploy finished, but tools/dtkit-patch.exe was not found in the game folder.
+Make sure the Darktide Mod Loader mod is enabled.</translation>
+    </message>
+    <message>
+        <source>Running dtkit-patch — toggle…</source>
+        <translation>Running dtkit-patch — toggle…</translation>
+    </message>
+    <message>
+        <source>Done. The bundle patch state was toggled.
+Launch the game to verify mods load (toggle again to disable).</source>
+        <translation>Done. The bundle patch state was toggled.
+Launch the game to verify mods load (toggle again to disable).</translation>
+    </message>
+    <message>
+        <source>dtkit-patch did not complete successfully.
+Check the output above and the log.</source>
+        <translation>dtkit-patch did not complete successfully.
+Check the output above and the log.</translation>
     </message>
 </context>
 <context>
@@ -2392,10 +2473,6 @@ The original exe is kept as {0}.</translation>
         <translation>Refresh Modlist</translation>
     </message>
     <message>
-        <source>Search mods…</source>
-        <translation>Search mods…</translation>
-    </message>
-    <message>
         <source>Sort Plugins</source>
         <translation>Sort Plugins</translation>
     </message>
@@ -2678,6 +2755,10 @@ The original exe is kept as {0}.</translation>
     <message>
         <source>Theme Editor</source>
         <translation>Theme Editor</translation>
+    </message>
+    <message>
+        <source>Search mods… (try !update, !fomod, !.dds)</source>
+        <translation>Search mods… (try !update, !fomod, !.dds)</translation>
     </message>
     <message>
         <source>Edit custom game…</source>
@@ -3462,6 +3543,70 @@ Remove the appended-collection entry?</translation>
     <message>
         <source>Modlist refreshed</source>
         <translation>Modlist refreshed</translation>
+    </message>
+    <message>
+        <source>Updates</source>
+        <translation>Updates</translation>
+    </message>
+    <message>
+        <source>Winning conflicts</source>
+        <translation>Winning conflicts</translation>
+    </message>
+    <message>
+        <source>Losing conflicts</source>
+        <translation>Losing conflicts</translation>
+    </message>
+    <message>
+        <source>Winning &amp; losing</source>
+        <translation>Winning &amp; losing</translation>
+    </message>
+    <message>
+        <source>Fully conflicted</source>
+        <translation>Fully conflicted</translation>
+    </message>
+    <message>
+        <source>FOMOD installs</source>
+        <translation>FOMOD installs</translation>
+    </message>
+    <message>
+        <source>BAIN installs</source>
+        <translation>BAIN installs</translation>
+    </message>
+    <message>
+        <source>Missing requirements</source>
+        <translation>Missing requirements</translation>
+    </message>
+    <message>
+        <source>Has notes</source>
+        <translation>Has notes</translation>
+    </message>
+    <message>
+        <source>Has plugins</source>
+        <translation>Has plugins</translation>
+    </message>
+    <message>
+        <source>Has BSA/BA2 archives</source>
+        <translation>Has BSA/BA2 archives</translation>
+    </message>
+    <message>
+        <source>PGPatcher textures</source>
+        <translation>PGPatcher textures</translation>
+    </message>
+    <message>
+        <source>Enabled / disabled</source>
+        <translation>Enabled / disabled</translation>
+    </message>
+    <message>
+        <source>By file type</source>
+        <translation>By file type</translation>
+    </message>
+    <message>
+        <source>By category</source>
+        <translation>By category</translation>
+    </message>
+    <message>
+        <source>Filter the modlist with search tags (combine them, and with text):</source>
+        <translation>Filter the modlist with search tags (combine them, and with text):</translation>
     </message>
     <message>
         <source>Mods with BA2 archives</source>

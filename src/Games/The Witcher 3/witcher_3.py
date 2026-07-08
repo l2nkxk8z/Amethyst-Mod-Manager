@@ -723,7 +723,8 @@ class Witcher3(BaseGame):
         if snapshot_path.is_file():
             overwrite_dir = self.get_effective_mod_staging_path().parent / "overwrite"
             _log("  Scanning game root for runtime-generated files ...")
-            moved = _move_runtime_files(game_path, snapshot_path, overwrite_dir, log_fn=_log)
+            moved = _move_runtime_files(game_path, snapshot_path, overwrite_dir, log_fn=_log,
+                                        restore_whitelist=self.restore_whitelist_matcher())
             _log(f"  Moved {moved} runtime-generated file(s) to overwrite/.")
             try:
                 snapshot_path.unlink()

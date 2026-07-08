@@ -993,6 +993,27 @@ class BaseGame(ABC):
         return []
 
     @property
+    def restore_whitelist(self) -> list:
+        """A list of RestoreWhitelistRule objects (from Utils.deploy) that keep
+        matching runtime files in the game folder on restore instead of moving
+        them to overwrite/ or Root_Folder/.  See RestoreWhitelistRule for the
+        anchored, glob-capable matching rules.  Default: protect nothing.
+        """
+        return []
+
+    def restore_whitelist_matcher(self, rel_prefix: str = ""):
+        """Compiled matcher over this game's restore_whitelist, or None.
+
+        rel_prefix — pass the deploy subfolder (e.g. "data/") when the walk
+        root is a subdirectory of the game root; rules are re-based onto it.
+        """
+        rules = self.restore_whitelist
+        if not rules:
+            return None
+        from Utils.deploy import build_restore_whitelist_matcher
+        return build_restore_whitelist_matcher(rules, rel_prefix=rel_prefix)
+
+    @property
     def restore_before_deploy(self) -> bool:
         """
         When True (the default), the GUI runs restore() before deploy() when
@@ -1374,6 +1395,7 @@ class BaseGame(ABC):
         moved = _move_runtime_files(
             Path(gp), snap, self.get_effective_root_folder_path(),
             log_fn=log_fn, exclude_dirs=exclude_dirs,
+            restore_whitelist=self.restore_whitelist_matcher(),
         )
         try:
             snap.unlink()

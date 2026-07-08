@@ -1705,6 +1705,7 @@ class Fallout_3(BaseGame):
             staging_root=self.get_effective_mod_staging_path(),
             strip_prefixes=self.mod_folder_strip_prefixes,
             log_fn=_log,
+            restore_whitelist=self.restore_whitelist_matcher(rel_prefix="data/"),
         )
         _log(f"  Restored {restored} file(s). Data_Core/ removed.")
 

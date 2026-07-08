@@ -1149,6 +1149,7 @@ def restore_data_core(
     strip_prefixes: set[str] | None = None,
     index_path: Path | None = None,
     log_fn=None,
+    restore_whitelist=None,
 ) -> int:
     """Undo a deploy: clear deploy_dir and move core_dir contents back.
 
@@ -1166,6 +1167,10 @@ def restore_data_core(
                      root (e.g. Profiles/<game>/mods/).
     strip_prefixes — top-level folder names to try when resolving staging paths
                      (e.g. {"Data"} for Bethesda games).
+    restore_whitelist — optional matcher (over lowercased deploy_dir-relative
+                     paths) whose matches are kept in the game folder: moved
+                     into core_dir so the swap restores them in place, never
+                     rescued to overwrite/ or a mod folder.
     Returns the number of files restored.
 
     If core_dir does not exist (e.g. the deploy dir was empty at deploy time
@@ -1316,6 +1321,7 @@ def restore_data_core(
         rescued_to_mod = 0
         rescued_to_overwrite = 0
         rescued_edited_vanilla = 0
+        kept_whitelisted = 0
         # Track rel_strs rescued to overwrite/ so we can update modindex.bin
         # by appending entries instead of re-walking the entire overwrite tree.
         rescued_overwrite_rels: list[str] = []
@@ -1450,6 +1456,20 @@ def restore_data_core(
                 except OSError:
                     pass
                 continue
+            if restore_whitelist is not None and restore_whitelist(rel_lower):
+                # Keep whitelisted files in the game folder by moving them into
+                # core_dir so the swap below restores them in place (skipping
+                # would delete them with deploy_dir).  Sync core_path so the
+                # len()-based restore count includes them.
+                core_dst = _core_str + "/" + rel_str
+                try:
+                    os.makedirs(os.path.dirname(core_dst), exist_ok=True)
+                    os.replace(src_str, core_dst)
+                    core_path[rel_lower] = core_dst
+                    kept_whitelisted += 1
+                except OSError:
+                    pass
+                continue
             # Check if we would skip as a known mod file
             in_filemap = rel_lower in filemap_lower
             in_modindex = rel_lower in modindex_lower
@@ -1574,6 +1594,8 @@ def restore_data_core(
                     update_mod_index(_index_path, _OVERWRITE_NAME, new_normal, existing_root)
                 except Exception:
                     pass
+        if kept_whitelisted:
+            _log(f"  Left {kept_whitelisted} whitelisted file(s) in the game folder.")
         print(f"  [TIMER] restore — rescue walk: {_time.perf_counter() - _t_rescue_start:.3f}s")
         # core_path was populated by the rescue walk above — one entry per
         # core file, so len() is our return-value count without a second walk.
