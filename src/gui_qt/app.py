@@ -9787,6 +9787,7 @@ class MainWindow(QMainWindow):
         else:
             total = self._vsplit.height()
             self._vsplit.setSizes([total - 180, 180])             # open ~180px
+            self._log_view.moveCursor(QTextCursor.End)            # scroll to newest
         self._sync_log_controls()
 
     def _sync_log_controls(self):
