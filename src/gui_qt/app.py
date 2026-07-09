@@ -4508,11 +4508,25 @@ class MainWindow(QMainWindow):
             key="missing_reqs")
 
     def _close_missing_reqs_tab(self):
-        """Close the Missing Requirements panel + refresh flags (an Ignore toggle
-        may have changed which mods are flagged)."""
+        """Close the Missing Requirements panel. Only refresh flags when an Ignore
+        toggle actually changed the ignored set (a plain open/close changes
+        nothing) — and via the light flag path, not a full modlist reload."""
+        view = getattr(self, "_missing_reqs_view", None)
+        changed = bool(getattr(view, "ignored_changed", False))
         if self._tabs.has_key("missing_reqs"):
             self._tabs.close_tab("missing_reqs")
-        self._reload_modlist()
+        if changed:
+            # Re-read the on-disk ignored set the panel just wrote, then let the
+            # light path recompute the ⚠ flag from it (no 500-file reload).
+            pdir = self._gs.profile_dir()
+            if pdir is not None:
+                try:
+                    from Utils.profile_state import read_ignored_missing_requirements
+                    self._ignored_missing_reqs = frozenset(
+                        read_ignored_missing_requirements(pdir))
+                except Exception:
+                    pass
+            self._refresh_modlist_flags()
 
     # ---- Show Conflicts (full detachable tab) ------------------------------
     def _open_show_conflicts_tab(self, mod_name: str):
