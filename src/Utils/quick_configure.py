@@ -89,16 +89,20 @@ def build_quick_configure_options(game) -> list[dict[str, Any]]:
                    "Automatic archive invalidation (prefer loose files over BSAs)",
                    val, apply)
 
+    # profile_ini_files / profile_saves only manage per-profile INI/save
+    # symlinks at deploy time — they don't change mod staging, the deploy
+    # target, or the plugin list, so no reload is needed (matches the full
+    # Configure view, whose same-game save no-ops for these).
     if hasattr(game, "set_profile_ini_files") and hasattr(game, "profile_ini_files"):
         add_toggle("profile_ini_files", "Use profile-specific INI files",
                    getattr(game, "profile_ini_files", False),
-                   lambda v: game.set_profile_ini_files(v), needs_reload=True)
+                   lambda v: game.set_profile_ini_files(v))
 
     if (hasattr(game, "set_profile_saves") and hasattr(game, "profile_saves")
             and getattr(game, "supports_profile_saves", True)):
         add_toggle("profile_saves", "Use profile-specific saves",
                    getattr(game, "profile_saves", False),
-                   lambda v: game.set_profile_saves(v), needs_reload=True)
+                   lambda v: game.set_profile_saves(v))
 
     if hasattr(game, "prefix_numbering"):
         val, apply = _toggle_attr(game, "prefix_numbering", True)

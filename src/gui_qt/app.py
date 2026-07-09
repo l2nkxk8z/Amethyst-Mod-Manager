@@ -1420,6 +1420,12 @@ class MainWindow(QMainWindow):
             on_select=self._on_profile_changed,
         )
         self._profile_selector.setFixedHeight(self._BTN_H)
+        # Rebuild the pinned actions on every open (like the Wizard menu): the
+        # "Open" submenu and Quick-configure entries are gated on live game
+        # settings, so toggling e.g. profile-specific INI files via Quick
+        # configure must make the Open submenu appear without a profile swap.
+        self._profile_selector._menu.aboutToShow.connect(
+            self._refresh_profile_actions)
         h.addWidget(self._profile_selector)
 
         h.addWidget(self._group_sep())
@@ -6120,9 +6126,9 @@ class MainWindow(QMainWindow):
         # what the checkbox/radio should snap back to.
         opt["value"] = value
         if opt.get("needs_reload"):
-            # profile INI/saves/patch changes affect paths — reload the game's
-            # paths, then refresh the lists that depend on them (mirrors a
-            # same-game Configure save, which _on_game_changed no-ops).
+            # A path-changing option (e.g. game patch version) — reload the
+            # game's paths, then refresh the lists that depend on them (mirrors
+            # a same-game Configure save, which _on_game_changed no-ops).
             try:
                 game.load_paths()
             except Exception:
@@ -6131,7 +6137,9 @@ class MainWindow(QMainWindow):
             self._reload_plugins()
         # Keep the Configure tab (if open) in sync. The profile menu itself is
         # NOT rebuilt here — it's still open; its action state already reflects
-        # the click, and the next open rebuilds fresh from _profile_actions().
+        # the click, and the next open rebuilds fresh from _profile_actions()
+        # (via the selector's aboutToShow hook), so a toggle that adds/removes
+        # the Open submenu takes effect the next time the dropdown is opened.
         v = getattr(self, "_configure_game_view", None)
         if v is not None and self._tabs.has_key("configure_game"):
             try:
