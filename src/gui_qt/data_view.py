@@ -52,9 +52,14 @@ class DataView(QWidget):
         self._resolved_cache: tuple | None = None
         self._build()
         self._data_ready.connect(self._on_data_ready)
-        self.scan_status_changed.connect(
-            lambda running: self._label.setText(self.tr("Loading…"))
-            if running else None)
+        self.scan_status_changed.connect(self._on_scan_status)
+
+    def _on_scan_status(self, running: bool):
+        if running:
+            self._label.setText(self.tr("Loading…"))
+            self._loading_overlay.show_over()
+        else:
+            self._loading_overlay.hide_overlay()
 
     # -- context ------------------------------------------------------------
     def configure(self, game, profile_dir, filemap_path, index_path):
@@ -130,6 +135,9 @@ class DataView(QWidget):
         self._name_min = col_mins[COL_NAME]
         self._tree.viewport().installEventFilter(self)
         v.addWidget(self._tree, 1)
+
+        from gui_qt.loading_overlay import LoadingOverlay
+        self._loading_overlay = LoadingOverlay(self._tree)
 
     def eventFilter(self, obj, event):
         from PySide6.QtCore import QEvent
