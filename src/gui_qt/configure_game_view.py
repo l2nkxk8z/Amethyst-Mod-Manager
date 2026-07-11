@@ -611,15 +611,71 @@ class ConfigureGameView(QWidget):
             rb.setChecked(True)
 
     # ---- setters / status -------------------------------------------------
+    def _exe_names(self):
+        """The game's main exe plus any configured alternatives (non-empty)."""
+        g = self._game
+        names = [getattr(g, "exe_name", None)] + list(
+            getattr(g, "exe_name_alts", []) or [])
+        return [e for e in names if e]
+
+    def _exe_present_in(self, folder: Path) -> bool | None:
+        """Is any of the game's exes locatable under *folder*?
+
+        exe_name may be a bare filename (directly inside the game root) or a
+        relative subpath (e.g. "bin/bg3.exe"); both are matched
+        case-insensitively to handle Proton/Linux casing. Returns None when the
+        game has no exe name configured (nothing to validate against).
+        """
+        exe_names = self._exe_names()
+        if not exe_names:
+            return None
+        for exe in exe_names:
+            parts = exe.lower().replace("\\", "/").split("/")
+            cur = folder
+            ok = True
+            for part in parts:
+                match = None
+                try:
+                    for entry in cur.iterdir():
+                        if entry.name.lower() == part:
+                            match = entry
+                            break
+                except (PermissionError, FileNotFoundError, NotADirectoryError):
+                    ok = False
+                    break
+                if match is None:
+                    ok = False
+                    break
+                cur = match
+            if ok and cur.is_file():
+                return True
+        return False
+
     def _set_game(self, path: Path, configured=False, source="steam"):
         self._found_path = path
         self._game_edit.setText(str(path))
-        if configured:
-            msg, tone = "Game already configured. You can update the path below.", "TEXT_OK"
-        elif source == "heroic":
-            msg, tone = "Found via Heroic Games Launcher.", "TEXT_OK"
+        # Steam/Heroic library detection already verified the exe lives here, so
+        # trust those sources. For manual browse / drive-scan / typed paths the
+        # folder is whatever the user picked — verify the exe is actually inside
+        # and warn (rather than silently claiming "Found") if it isn't.
+        if source in ("steam", "heroic") or configured:
+            if configured:
+                msg, tone = "Game already configured. You can update the path below.", "TEXT_OK"
+            elif source == "heroic":
+                msg, tone = "Found via Heroic Games Launcher.", "TEXT_OK"
+            else:
+                msg, tone = "Found via Steam libraries.", "TEXT_OK"
         else:
-            msg, tone = "Found via Steam libraries.", "TEXT_OK"
+            present = self._exe_present_in(path)
+            if present is False:
+                names = ", ".join(self._exe_names())
+                msg = self.tr("Executable ({0}) not found in this folder — "
+                              "double-check the path.").format(names)
+                tone = "TEXT_ERR"
+            elif present is None:
+                msg, tone = "Folder selected.", "TEXT_OK"
+            else:
+                msg, tone = "Executable found.", "TEXT_OK"
         self._game_status.setText(msg)
         self._game_status.setStyleSheet(f"color:{self._c(tone)};")
         self._save_btn.setEnabled(True)
@@ -636,7 +692,18 @@ class ConfigureGameView(QWidget):
     def _on_game_typed(self):
         text = self._game_edit.text().strip()
         if text:
-            self._found_path = Path(text)
+            path = Path(text)
+            self._found_path = path
+            present = self._exe_present_in(path)
+            if present is False:
+                names = ", ".join(self._exe_names())
+                self._game_status.setText(
+                    self.tr("Executable ({0}) not found in this folder — "
+                            "double-check the path.").format(names))
+                self._game_status.setStyleSheet(f"color:{self._c('TEXT_ERR')};")
+            elif present is True:
+                self._game_status.setText(self.tr("Executable found."))
+                self._game_status.setStyleSheet(f"color:{self._c('TEXT_OK')};")
             self._save_btn.setEnabled(True)
 
     def _on_prefix_typed(self):
