@@ -8091,6 +8091,26 @@ class MainWindow(QMainWindow):
         self._apply_modlist_filters()
         self._update_filters_btn_active()
 
+    def _quick_modlist_filter_state(self, key: str) -> int:
+        """Read the current tri-state for a status filter (for the column-menu
+        quick-filter check marks). Reads the panel so it reflects panel edits."""
+        panel = getattr(self, "_modlist_filter_panel", None)
+        if panel is not None:
+            return panel.check_state(key)
+        return (getattr(self, "_modlist_filter_state", {}) or {}).get(key, 0)
+
+    def _on_quick_modlist_filter(self, key: str, state: int):
+        """Apply a quick filter chosen from the column menu by driving the
+        Filters panel checkbox, so the panel and menu stay in sync and the
+        normal filter pipeline (footer-button tint included) runs."""
+        panel = getattr(self, "_modlist_filter_panel", None)
+        if panel is not None:
+            panel.set_check(key, state)   # emits changed -> _on_modlist_filter_changed
+        else:   # panel not built yet — fall back to the state dict directly
+            self._modlist_filter_state[key] = state
+            self._apply_modlist_filters()
+            self._update_filters_btn_active()
+
     def _apply_modlist_filters(self):
         from gui_qt.modlist_filter import compute_hidden_rows
         state = getattr(self, "_modlist_filter_state", {}) or {}
@@ -8431,6 +8451,8 @@ class MainWindow(QMainWindow):
         # Enabling the Size column scans mod folder sizes on demand (Tk parity:
         # only walk the disk when Size is actually shown).
         self._modlist_view.on_sizes_requested = self._apply_modlist_sizes
+        self._modlist_view.on_quick_filter = self._on_quick_modlist_filter
+        self._modlist_view.quick_filter_state = self._quick_modlist_filter_state
         self._modlist_model._sizes = {}
         if not self._modlist_view.isColumnHidden(COL_SIZE):
             self._apply_modlist_sizes()

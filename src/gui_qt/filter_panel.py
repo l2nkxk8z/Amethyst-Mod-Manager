@@ -239,6 +239,18 @@ class FilterSidePanel(QWidget):
                 k for k, cb in checks.items() if cb.state() == 2)
         return st
 
+    def set_check(self, key: str, state: int, *, emit: bool = True) -> None:
+        """Programmatically set a status checkbox's tri-state (used by the
+        modlist column menu's quick-filter shortcuts). Fires `changed` by
+        default so the modlist re-filters."""
+        cb = self._checks.get(key)
+        if cb is not None:
+            cb.set_state(state, emit=emit)
+
+    def check_state(self, key: str) -> int:
+        cb = self._checks.get(key)
+        return cb.state() if cb is not None else STATE_OFF
+
     def set_check_enabled(self, key: str, enabled: bool) -> None:
         cb = self._checks.get(key)
         if cb is not None:

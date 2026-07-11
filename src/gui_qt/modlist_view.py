@@ -260,6 +260,11 @@ class ModListView(QTreeView):
         self._col_menu_btn = btn
         # Callback the window sets so enabling Size can trigger a size scan.
         self.on_sizes_requested = None
+        # Hooks the window sets for the quick-filter menu items: on_quick_filter
+        # (key, 0|1) applies the filter; quick_filter_state(key)->int reads the
+        # current tri-state so the menu shows the right check marks.
+        self.on_quick_filter = None
+        self.quick_filter_state = None
         self._position_column_menu_button()
         btn.show()
 
@@ -290,8 +295,31 @@ class ModListView(QTreeView):
             a.setChecked(not self.isColumnHidden(col))
             a.toggled.connect(lambda checked, c=col: self._set_column_visible(c, checked))
             menu.addAction(a)
+        # Quick modlist filters — a faster way to apply the "By status" filters
+        # from the Filters panel. These drive the same filter state, so the
+        # panel checkboxes stay in sync (the window wires on_quick_filter).
+        menu.addSeparator()
+        get = getattr(self, "quick_filter_state", None)
+        for key, label in (
+            ("filter_show_enabled", self.tr("Enabled")),
+            ("filter_show_disabled", self.tr("Disabled")),
+            ("filter_hide_separators", self.tr("Hide separators")),
+        ):
+            a = QAction(label, menu)
+            a.setCheckable(True)
+            a.setChecked(callable(get) and get(key) == 1)
+            a.toggled.connect(
+                lambda checked, k=key: self._on_quick_filter(k, checked))
+            menu.addAction(a)
         btn = self._col_menu_btn
         menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
+
+    def _on_quick_filter(self, key: str, on: bool):
+        # State 1 = include-mode (show only matching); 0 = off. Hide-separators
+        # is likewise 1/0. The window hook applies it to the shared filter state.
+        cb = getattr(self, "on_quick_filter", None)
+        if callable(cb):
+            cb(key, 1 if on else 0)
 
     def _set_column_visible(self, col: int, visible: bool):
         self.setColumnHidden(col, not visible)
