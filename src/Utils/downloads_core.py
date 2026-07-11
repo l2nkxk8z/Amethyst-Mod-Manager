@@ -210,6 +210,11 @@ def scan_download_dirs(game_name: Optional[str]) -> list[DownloadEntry]:
                             st = entry.stat()
                         except OSError:
                             continue
+                        if st.st_size == 0:
+                            # In-progress browser downloads (e.g. Firefox) create a
+                            # 0-byte placeholder with the final name next to the
+                            # .part file — hide it until the download completes.
+                            continue
                         bucket.append((entry, st.st_mtime, st.st_size))
             except OSError:
                 pass

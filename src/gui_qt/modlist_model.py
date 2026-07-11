@@ -603,7 +603,7 @@ class ModListModel(QAbstractTableModel):
             self.dataChanged.emit(self.index(row, 0),
                                   self.index(row, len(COLUMNS) - 1),
                                   [EntryRole, Qt.DisplayRole])
-            self.save()
+            self.save(edit_ctx=("toggle", [(e.name, e.enabled)]))
             self.enabled_changed.emit([(e.name, e.enabled)])
 
     def set_rows_enabled(self, rows, enabled: bool) -> None:
@@ -632,7 +632,7 @@ class ModListModel(QAbstractTableModel):
                 run_start = r
             prev = r
         if changed:
-            self.save()
+            self.save(edit_ctx=("toggle", list(changed)))
             self.enabled_changed.emit(changed)
 
     def entry(self, row: int) -> ModEntry:
@@ -744,7 +744,7 @@ class ModListModel(QAbstractTableModel):
                 self.index(0, 0),
                 self.index(len(self._entries) - 1, len(COLUMNS) - 1),
                 [EntryRole, Qt.DisplayRole])
-            self.save()
+            self.save(edit_ctx=("toggle", list(changed)))
             self.enabled_changed.emit(changed)
 
     def hidden_rows(self) -> set[int]:
@@ -795,10 +795,16 @@ class ModListModel(QAbstractTableModel):
         return bits, codes, bsa
 
     # ---- persistence ------------------------------------------------------
-    def save(self) -> None:
+    def save(self, edit_ctx=None) -> None:
         """Write the current entries back to modlist.txt (no-op if no path).
         The Overwrite / Root Folder boundary separators are UI-only and are
-        stripped before writing. Fires on_saved() so the view can rebuild."""
+        stripped before writing. Fires on_saved(edit_ctx) so the view can
+        rebuild. edit_ctx tells the app what kind of edit this save carries
+        so it can take a cheaper path than the full conflict rebuild:
+          ("move", moved_names, crossed_names) — pure reorder (drag /
+            set_priority / move-to-separator / sort-selection)
+          ("toggle", [(name, enabled), ...])   — enable/disable only
+          None — anything else (or an unclassifiable edit) → full rebuild."""
         if self.modlist_path is None:
             return
         # Every structural edit (drag, remove, add-separator, set_priority…)
@@ -818,7 +824,7 @@ class ModListModel(QAbstractTableModel):
             return
         if self.on_saved:
             with span("modlist.on_saved(kickoff)"):
-                self.on_saved()
+                self.on_saved(edit_ctx)
 
     # ---- structural edits (context-menu actions) --------------------------
     def rename(self, row: int, new_name: str) -> None:
@@ -1015,6 +1021,42 @@ class ModListModel(QAbstractTableModel):
             i += 1
         return i
 
+    def _mod_name_order(self) -> list[str]:
+        """Mod names (separators excluded) in natural/priority order."""
+        return [e.name for e in self._natural if not e.is_separator]
+
+    @staticmethod
+    def _move_ctx(old_order: list[str], new_order: list[str],
+                  moved_names: list[str]):
+        """Build the "move" edit_ctx payload: (moved_names, crossed_names).
+
+        crossed = the union over moved mods of every OTHER mod whose priority
+        order relative to that mod flipped. Handles non-contiguous moved sets
+        (sort-selection) — non-moved pairs never flip, so only pairs involving
+        a moved mod are tested. The union may over-report for multi-mod moves
+        (a partner of one moved mod crossed only by another) — that costs an
+        unnecessary rebuild, never a wrong skip. Returns None (= caller must
+        rebuild) if a moved name is missing from either order — the edit
+        wasn't the pure reorder this reasoning assumes — or if the pairwise
+        sweep would be too big to run on the UI thread."""
+        if not moved_names:
+            return ([], [])
+        old_idx = {n: i for i, n in enumerate(old_order)}
+        new_idx = {n: i for i, n in enumerate(new_order)}
+        if len(moved_names) * len(old_order) > 500_000:
+            return None
+        pairs = [(n, i, new_idx[n]) for n, i in old_idx.items()
+                 if n in new_idx]
+        crossed: set[str] = set()
+        for m in moved_names:
+            om, nm = old_idx.get(m), new_idx.get(m)
+            if om is None or nm is None:
+                return None
+            for n, oi, ni in pairs:
+                if n != m and (oi < om) != (ni < nm):
+                    crossed.add(n)
+        return (moved_names, sorted(crossed))
+
     def move_block(self, src_rows: list[int], dest: int) -> bool:
         """Move a contiguous block of rows to *dest* using beginMoveRows so the
         view animates and keeps selection/scroll (unlike a full reset).
@@ -1052,12 +1094,15 @@ class ModListModel(QAbstractTableModel):
             return False
         from Utils.perftrace import span
         with span("model.move_block"):
+            old_order = self._mod_name_order()
             block = self._entries[first:last + 1]
             del self._entries[first:last + 1]
             insert_at = dest if dest < first else dest - len(block)
             self._entries[insert_at:insert_at] = block
             self.endMoveRows()
-            self.save()
+            moved = [e.name for e in block if not e.is_separator]
+            ctx = self._move_ctx(old_order, self._mod_name_order(), moved)
+            self.save(edit_ctx=None if ctx is None else ("move",) + ctx)
         return True
 
     def move_block_display(self, src_rows: list[int], slot: int,
@@ -1097,6 +1142,7 @@ class ModListModel(QAbstractTableModel):
         if not self.beginMoveRows(QModelIndex(), first, last,
                                   QModelIndex(), ins):
             return False
+        old_order = self._mod_name_order()
         block = self._entries[first:last + 1]
         # The display list must become independent of _natural before the
         # splice (it IS a derived list in reverse mode, but guard anyway).
@@ -1112,5 +1158,7 @@ class ModListModel(QAbstractTableModel):
         self._natural = uninvert_display(self._entries)
         self._sep_hl_cache.clear()
         self._rebuild_display()
-        self.save()
+        moved = [e.name for e in block if not e.is_separator]
+        ctx = self._move_ctx(old_order, self._mod_name_order(), moved)
+        self.save(edit_ctx=None if ctx is None else ("move",) + ctx)
         return True

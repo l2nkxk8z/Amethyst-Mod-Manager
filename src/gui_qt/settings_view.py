@@ -491,7 +491,10 @@ class SettingsView(QWidget):
             g, self.tr("Clear archive after install"),
             uc.load_clear_archive_after_install,
             uc.save_clear_archive_after_install,
-            help=self.tr("Delete a mod's downloaded archive after it is extracted."))
+            help=self.tr("Delete a mod's downloaded archive after it is extracted. "
+                 "Only applies to archives Amethyst downloaded itself — installs "
+                 "from the Install Mod button or the Downloads tab keep their "
+                 "archive."))
         self._checkbox(
             g, self.tr("Keep FOMOD archives"),
             uc.load_keep_fomod_archives, uc.save_keep_fomod_archives,

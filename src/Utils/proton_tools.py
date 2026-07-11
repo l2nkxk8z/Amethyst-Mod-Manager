@@ -348,6 +348,19 @@ def install_d3dcompiler_47(game, log_fn: LogFn = _noop) -> bool:
     return bool(_impl(steam_id, log_fn=log_fn, prefix_path=prefix_path))
 
 
+def install_xact(game, log_fn: LogFn = _noop) -> bool:
+    """Install the native XAudio2/XACT audio DLLs (winetricks ``xact`` +
+    ``xact_x64``) into the game's prefix, replacing Proton's built-in FAudio
+    for games/mods that hit its edge cases (crackling, silent voices/effects,
+    audio crashes). Unattended; each verb is skip-if-recorded, so re-running
+    is instant."""
+    from Utils.protontricks import install_winetricks_verb
+    ok = True
+    for verb in ("xact", "xact_x64"):
+        ok = install_winetricks_verb(game, verb, log_fn=log_fn) and ok
+    return ok
+
+
 def install_dotnet(game, version: str, log_fn: LogFn = _noop) -> bool:
     """Download (cached) + silently install the .NET desktop runtime *version*
     into the game's prefix. Mirrors the Tk panel's ``_run_install_dotnet``

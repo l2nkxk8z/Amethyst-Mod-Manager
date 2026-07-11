@@ -47,6 +47,7 @@ class NexusModMeta:
     author: str = ""                   # mod author
     nexus_name: str = ""               # mod name on Nexus (may differ from folder)
     installation_file: str = ""        # original archive filename
+    file_size: int = 0                 # original archive size in bytes
     installed: str = ""                # ISO-8601 timestamp
     nexus_url: str = ""                # full Nexus mod page URL
     description: str = ""              # short summary
@@ -126,6 +127,7 @@ _KEY_MAP: dict[str, str] = {
     "author":            "author",
     "nexusName":         "nexus_name",
     "installationFile":  "installation_file",
+    "fileSize":          "file_size",
     "installed":         "installed",
     "nexusUrl":          "nexus_url",
     "description":       "description",
@@ -149,7 +151,7 @@ _KEY_MAP: dict[str, str] = {
 }
 
 # Attributes that are ints
-_INT_FIELDS = {"mod_id", "file_id", "category_id", "latest_file_id"}
+_INT_FIELDS = {"mod_id", "file_id", "category_id", "latest_file_id", "file_size"}
 
 # Attributes that are bools
 _BOOL_FIELDS = {
@@ -225,6 +227,10 @@ def write_meta(meta_ini_path: Path, meta: NexusModMeta) -> None:
             # that build a fresh NexusModMeta to update other fields would
             # otherwise wipe it.
             if attr == "xedit_modified_plugins" and not value:
+                continue
+            # Same for the archive size: stamped once at install time; callers
+            # that build a fresh NexusModMeta must not zero it.
+            if attr == "file_size" and not value:
                 continue
             cp.set(_SECTION, ini_key, str(value).replace("%", "%%"))
 

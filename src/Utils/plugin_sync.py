@@ -62,14 +62,15 @@ def sync_plugins_for_mods(game, profile_dir: Path | None,
         found = _mod_plugins(staging_root, mod_name, plugin_exts)
         if now_enabled and not found:
             # Enabling a mod whose staging folder has NO top-level plugin files
-            # for this game's extensions. Expected for content-only mods; but if
-            # this is the "copied mod has no plugins" report, it means the scan
-            # of staging/<mod> came back empty (missing/symlinked/wrong-cased
-            # folder, or the plugin sits in a subfolder Tk's flat scan misses).
+            # for this game's extensions. This is completely normal for
+            # content-only mods (textures/meshes/grass caches/etc.) and needs no
+            # report. Only warn when the staging folder is actually missing,
+            # which points at a real bug (never-staged / wrong-cased / symlinked
+            # folder) rather than a plain content mod.
             mdir = staging_root / mod_name
-            log(f"WARN plugin sync: enabled mod \"{mod_name}\" has NO top-level "
-                f"plugin files in {mdir} (is_dir={mdir.is_dir()}, "
-                f"exts={sorted(plugin_exts)}) — nothing added to plugins.txt")
+            if not mdir.is_dir():
+                log(f"WARN plugin sync: enabled mod \"{mod_name}\" has no "
+                    f"staging folder at {mdir} — nothing added to plugins.txt")
         for name in found:
             if now_enabled:
                 add.append(name)

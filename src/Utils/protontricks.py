@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -20,63 +21,25 @@ from typing import Callable
 
 from Utils.app_log import safe_log as _safe_log
 
-# Env vars the AppImage runtime injects to isolate the bundle's own libraries.
-# They point into the (transient) FUSE mount, so a Proton subprocess that
-# inherits them loads the AppImage's bundled Python/libs and its blocked
-# LD_LIBRARY_PATH sentinel instead of the host's — which breaks Proton's
-# startup Vulkan probe (CDLL('libvulkan.so.1') fails to find the host lib).
-_APPIMAGE_ENV_PREFIXES = (
-    "APPDIR", "APPIMAGE", "OWD", "ARGV0",
-    "SSL_CERT_FILE", "SSL_CERT_DIR", "CURL_CA_BUNDLE",
-    "LD_LIBRARY_PATH", "LD_PRELOAD",
-    "PYTHONHOME", "PYTHONPATH",
-    "GDK_PIXBUF_MODULEDIR", "GDK_PIXBUF_MODULE_FILE",
-    "GIO_MODULE_DIR", "GSETTINGS_SCHEMA_DIR",
-    "GTK_PATH", "GTK_IM_MODULE_FILE",
-    "QT_PLUGIN_PATH", "QML2_IMPORT_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH",
-    "GCONV_PATH", "PERLLIB", "PERL5LIB",
-)
+from Utils.appimage_env import in_appimage, strip_appimage_vars
 
 
 def strip_appimage_env(env: dict) -> dict:
     """Return *env* with AppImage-injected loader/bundle vars removed.
 
-    No-op outside the AppImage. When bundled, these vars point into the
-    AppImage's FUSE mount; passing them to a Proton subprocess makes it load
-    the bundle's libraries and its blocked LD_LIBRARY_PATH sentinel instead of
-    the host's, breaking Proton's Vulkan GPU probe on startup.
+    No-op outside the AppImage (from-source / flatpak callers keep their env
+    untouched). When bundled, these vars point into the AppImage's FUSE mount;
+    passing them to a Proton subprocess makes it load the bundle's libraries
+    and its blocked LD_LIBRARY_PATH sentinel instead of the host's, breaking
+    Proton's Vulkan GPU probe on startup.
 
-    Whole vars in ``_APPIMAGE_ENV_PREFIXES`` are dropped outright; list-style
-    vars (PATH, XDG_DATA_DIRS) keep their host entries but have any
-    ``/tmp/.mount_*`` / ``$APPDIR`` fragments removed — otherwise the host
-    Proton we launch would still find the bundle's own ``python3`` / tools on
-    PATH and re-pollute itself.
+    The var list and strip logic live in :mod:`Utils.appimage_env` — the
+    single source of truth shared with ``xdg.host_env`` and
+    ``smapi_installer.clean_env``.
     """
-    if not os.environ.get("APPDIR") and not os.environ.get("APPIMAGE"):
+    if not in_appimage():
         return env
-    appdir = os.path.realpath(os.environ.get("APPDIR", "")) if os.environ.get("APPDIR") else ""
-    out = {
-        k: v for k, v in env.items()
-        if not any(k.startswith(p) for p in _APPIMAGE_ENV_PREFIXES)
-    }
-
-    def _bundled_entry(entry: str) -> bool:
-        if not entry:
-            return True
-        if entry.startswith("/tmp/.mount_"):
-            return True
-        return bool(appdir) and os.path.realpath(entry).startswith(appdir)
-
-    for k in ("PATH", "XDG_DATA_DIRS", "XDG_CONFIG_DIRS"):
-        if k not in out:
-            continue
-        cleaned = os.pathsep.join(
-            p for p in out[k].split(os.pathsep) if not _bundled_entry(p))
-        if cleaned:
-            out[k] = cleaned
-        else:
-            out.pop(k, None)
-    return out
+    return strip_appimage_vars(env)
 
 
 _WINETRICKS_URL = "https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks"
@@ -306,6 +269,7 @@ def _install_via_winetricks(
     prefix_path: Path,
     component: str,
     log_fn: Callable[[str], None],
+    timeout: int = 300,
 ) -> bool:
     """Install *component* directly via the bundled winetricks using WINEPREFIX."""
     if not _bundled_winetricks().is_file():
@@ -331,9 +295,11 @@ def _install_via_winetricks(
 
     log_fn(f"Installing {component} via winetricks (this may take a minute) …")
     try:
+        # -q = unattended: suppresses the per-DLL regsvr32 success dialogs
+        # (xact alone pops ~a dozen) and makes verb installers run silent.
         result = subprocess.run(
-            [winetricks, component],
-            capture_output=True, text=True, timeout=300, env=env,
+            [winetricks, "-q", component],
+            capture_output=True, text=True, timeout=timeout, env=env,
         )
         if result.returncode == 0:
             log_fn(f"{component} installed successfully.")
@@ -342,7 +308,7 @@ def _install_via_winetricks(
             log_fn(f"{component} install failed: {result.stderr or result.stdout or 'unknown error'}")
             return False
     except subprocess.TimeoutExpired:
-        log_fn(f"{component} install timed out after 5 minutes.")
+        log_fn(f"{component} install timed out after {timeout // 60} minutes.")
         return False
     except Exception as exc:
         log_fn(f"{component} error: {exc}")
@@ -353,26 +319,84 @@ def _install_via_protontricks(
     steam_id: str,
     component: str,
     log_fn: Callable[[str], None],
+    timeout: int = 300,
 ) -> bool:
     """Install *component* via system protontricks against *steam_id*."""
     cmd = _get_protontricks_cmd(steam_id)
     if cmd is None:
         return False
-    cmd = cmd + [component]
+    # -q = unattended (forwarded to winetricks inside the prefix) — no
+    # regsvr32 popups, silent verb installers.
+    cmd = cmd + ["-q", component]
     log_fn(f"Installing {component} via protontricks (this may take a minute) …")
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         if result.returncode == 0:
             log_fn(f"{component} installed successfully.")
             return True
         log_fn(f"{component} install failed: {result.stderr or result.stdout or 'unknown error'}")
         return False
     except subprocess.TimeoutExpired:
-        log_fn(f"{component} install timed out after 5 minutes.")
+        log_fn(f"{component} install timed out after {timeout // 60} minutes.")
         return False
     except Exception as exc:
         log_fn(f"{component} error: {exc}")
         return False
+
+
+def winetricks_verb_dep_key(verb: str) -> str:
+    """Marker key for a generic winetricks verb (e.g. 'fontsmooth=rgb' → 'wt_fontsmooth_rgb')."""
+    return "wt_" + re.sub(r"\W+", "_", verb).strip("_")
+
+
+def install_winetricks_verb(
+    game,
+    verb: str,
+    log_fn: Callable[[str], None] | None = None,
+    *,
+    timeout: int = 300,
+) -> bool:
+    """Install a generic winetricks *verb* into *game*'s Proton prefix.
+
+    Uses the bundled winetricks with WINEPREFIX first (self-contained — no
+    protontricks needed on the system), falling back to system protontricks
+    against the game's Steam ID when winetricks fails or no prefix path is
+    configured. Success is recorded in the prefix's amethyst_deps.json so
+    repeat calls skip instantly. *timeout* is per attempt — pass a large
+    value for slow verbs like dotnet48.
+    """
+    _log = _safe_log(log_fn)
+    get_prefix = getattr(game, "get_prefix_path", None)
+    prefix = get_prefix() if callable(get_prefix) else None
+    if prefix is not None and not Path(prefix).is_dir():
+        prefix = None
+
+    key = winetricks_verb_dep_key(verb)
+    if prefix is not None and is_dep_installed(Path(prefix), key):
+        _log(f"{verb} already installed in this prefix — skipping.")
+        return True
+
+    def _mark():
+        if prefix is not None:
+            mark_dep_installed(Path(prefix), key)
+
+    if prefix is not None:
+        if _install_via_winetricks(Path(prefix), verb, _log, timeout):
+            _mark()
+            return True
+        _log("Falling back to protontricks …")
+
+    from Utils.steam_finder import game_steam_id
+    steam_id = game_steam_id(game)
+    if steam_id and _get_protontricks_cmd(steam_id) is not None:
+        if _install_via_protontricks(steam_id, verb, _log, timeout):
+            _mark()
+            return True
+        return False
+
+    if prefix is None:
+        _log(f"{verb}: no prefix path or working protontricks available — cannot install.")
+    return False
 
 
 def _download_verified(url: str, sha256: str, log_fn: Callable[[str], None]) -> bytes | None:

@@ -122,6 +122,12 @@ class ShareCodeImportOverlay(_CodeOverlayBase):
         self._area.setPlaceholderText("AMMCODE1:…")
         self._v.addWidget(self._area, 1)
 
+        # Live preview of the decoded code — profile / game / mod count / size /
+        # export date — so the user sees what they're importing before committing.
+        self._preview = self._sub("")
+        self._v.addWidget(self._preview)
+        self._area.textChanged.connect(self._update_preview)
+
         # Offer to paste the clipboard contents in one tap.
         cb = QGuiApplication.clipboard()
         clip = cb.text() if cb is not None else ""
@@ -147,6 +153,38 @@ class ShareCodeImportOverlay(_CodeOverlayBase):
 
         self._present()
         self._area.setFocus()
+
+    def _update_preview(self):
+        text = self._area.toPlainText().strip()
+        if not text:
+            self._preview.setText("")
+            return
+        try:
+            from Utils.profile_export import decode_manifest
+            manifest = decode_manifest(text)
+        except Exception:
+            self._preview.setText(self.tr("Not a valid share code."))
+            return
+        info = manifest.get("info") or {}
+        mods = manifest.get("mods") or []
+        parts = []
+        name = (info.get("name") or "").strip()
+        if name:
+            parts.append(name)
+        game = (info.get("gameName") or info.get("domainName") or "").strip()
+        if game:
+            parts.append(game)
+        noun = "mod" if len(mods) == 1 else "mods"
+        counts = f"{len(mods)} {noun}"
+        total = int(info.get("totalSize") or 0)
+        if total:
+            from Utils.collection_manifest import fmt_size
+            counts += self.tr(", ~{0} to download").format(fmt_size(total))
+        parts.append(counts)
+        exported = (info.get("exported") or "")[:10]
+        if exported:
+            parts.append(self.tr("exported {0}").format(exported))
+        self._preview.setText("  —  ".join(parts))
 
     def _confirm(self):
         text = self._area.toPlainText().strip()

@@ -174,6 +174,9 @@ class MainWindow(QMainWindow):
     # (generation, bsa_codes, bsa_overrides, bsa_overridden_by) — BSA-only
     # recompute after a plugin toggle/reorder (no filemap rebuild).
     _bsa_conflicts_ready = Signal(int, object, object, object)
+    # (generation) — filemap-only rebuild finished (disable fast path: the
+    # conflict scan was provably redundant). See _rebuild_filemap_light_async.
+    _filemap_light_done = Signal(int)
     # (generation, list[FrameworkStatus]) from the framework-detect worker —
     # detect_frameworks reads filemap.txt + the mod index, too slow for the UI
     # thread on a big modlist. See _refresh_framework_banner.
@@ -292,6 +295,7 @@ class MainWindow(QMainWindow):
         self._gs.load()
         self._conflicts_ready.connect(self._on_conflicts_ready)
         self._bsa_conflicts_ready.connect(self._on_bsa_conflicts_ready)
+        self._filemap_light_done.connect(self._on_filemap_light_done)
         self._framework_statuses_ready.connect(self._on_framework_statuses)
         # Drops stale framework-detect results (game switched mid-compute).
         self._framework_gen = 0
@@ -460,6 +464,7 @@ class MainWindow(QMainWindow):
         self._col_install_control = None
         self._col_install_slug = ""
         self._col_bundle_zip = ""      # local .amethyst pending bundle extraction
+        self._col_offsite = []         # (name, url) manual mods — reminder on done
         self._col_status.connect(self._on_col_status)
         self._col_progress.connect(self._on_col_progress)
         self._col_agg.connect(self._on_col_agg)
@@ -647,6 +652,7 @@ class MainWindow(QMainWindow):
         plugins (+ conflict-tinted ones) and picking a plugin highlights its
         owning mod (Tk parity)."""
         self._conflict_data = None
+        self._conflict_maps_current = False
         mv, pv = self._modlist_view, self._plugin_view
         mv.selectionModel().selectionChanged.connect(
             lambda *_: self._on_mod_selection_changed())
@@ -926,8 +932,9 @@ class MainWindow(QMainWindow):
         v.setSpacing(6)
 
         # FlowLayout so longer translated labels wrap to a second row instead of
-        # overflowing the panel (see gui_qt/flow_layout.py).
-        btns = FlowLayout(spacing=4)
+        # overflowing the panel (see gui_qt/flow_layout.py). Centred so the row
+        # stays aligned with the middle of the modlist panel at any width.
+        btns = FlowLayout(spacing=4, center=True)
         # label -> handler ("" = no-op stub, needs a dialog/auth — wired later).
         _handlers = {
             "Expand all": self._on_toggle_collapse_all,
@@ -1359,16 +1366,24 @@ class MainWindow(QMainWindow):
         self._tf_search = search
         return bar
 
+    def _set_tf_content_bar_visible(self, visible: bool):
+        """Show/hide the inline find-in-files bar, then re-clamp the footer
+        stack: its max height is pinned to the current page's height (see
+        _CurrentPageStack), so the page growing a row would otherwise be
+        squashed into the old clamped height."""
+        self._tf_content_bar.setVisible(visible)
+        self._plugin_footer_stack.clamp_to_current()
+
     def _on_text_files_content_search(self):
         """Toggle the inline content-search bar. When a search is active, this
         clears it; otherwise it opens the input bar above the footer + focuses it."""
         if self._text_files_view._content_keyword:
             self._text_files_view.clear_content_search()
             self._tf_content_input.clear()
-            self._tf_content_bar.setVisible(False)
+            self._set_tf_content_bar_visible(False)
             return
         showing = not self._tf_content_bar.isVisible()
-        self._tf_content_bar.setVisible(showing)
+        self._set_tf_content_bar_visible(showing)
         if showing:
             self._tf_content_input.setFocus()
             self._tf_content_input.selectAll()
@@ -1386,7 +1401,7 @@ class MainWindow(QMainWindow):
             self._text_files_view.clear_content_search()
 
     def _close_tf_content_bar(self):
-        self._tf_content_bar.setVisible(False)
+        self._set_tf_content_bar_visible(False)
         self._tf_content_input.clear()
         if self._text_files_view._content_keyword:
             self._text_files_view.clear_content_search()
@@ -1482,6 +1497,7 @@ class MainWindow(QMainWindow):
                 None,
                 (self.tr("Install VC++ Redistributable"), self._proton_install_vcredist),
                 (self.tr("Install d3dcompiler_47"), self._proton_install_d3dcompiler),
+                (self.tr("Install XACT audio (XAudio2)"), self._proton_install_xact),
                 (self.tr(".NET runtime"), [
                     (self.tr(".NET {0}").format(v), (lambda v=v: self._proton_install_dotnet(v)))
                     for v in DOTNET_VERSIONS
@@ -2652,6 +2668,9 @@ class MainWindow(QMainWindow):
         slug = getattr(collection, "slug", "") or ""
         domain = (getattr(game, "nexus_game_domain", "")
                   or getattr(collection, "game_domain", "") or "")
+        # Off-site mods (manual downloads) from the detail view's manifest —
+        # remembered so the completion handler can remind the user about them.
+        offsite = list(getattr(detail_view, "_offsite", None) or [])
 
         # Premium gate runs off-thread (validate() is rate-limited); on success it
         # creates the profile + starts the pipeline, all marshaled back to the UI.
@@ -2682,7 +2701,8 @@ class MainWindow(QMainWindow):
                              "game": game, "api": api,
                              "recommend_new": recommend_new, "intent": intent,
                              "local_manifest": local_manifest,
-                             "bundle_zip": bundle_zip})
+                             "bundle_zip": bundle_zip,
+                             "offsite": offsite})
 
         threading.Thread(target=_premium_worker, daemon=True,
                          name="col-premium").start()
@@ -2955,6 +2975,7 @@ class MainWindow(QMainWindow):
         # files are extracted once the Nexus mods finish installing.
         local_manifest = info.get("local_manifest")
         self._col_bundle_zip = info.get("bundle_zip") or ""
+        self._col_offsite = list(info.get("offsite") or [])
 
         # Resolve the install mode chosen in the mode overlay (default: new).
         mode_result = info.get("mode_result") or ("new", None, False, False)
@@ -3421,6 +3442,7 @@ class MainWindow(QMainWindow):
         self._select_installed_collection_profile(profile_name)
         msg = f"Collection installed — {installed}/{total} mod(s)"
         self._notify(msg + (f" ({skipped_n} skipped)" if skipped_n else ""), "success")
+        self._show_offsite_reminder()
 
     # ---- Import profile: local-bundle extraction -------------------------
     def _finish_import_bundle(self, bundle_zip, profile_name, ov,
@@ -3472,6 +3494,29 @@ class MainWindow(QMainWindow):
         msg = f"Profile imported — {installed}/{total} mod(s)"
         self._notify(msg + (f" ({skipped_n} skipped)" if skipped_n else ""),
                      "success")
+        self._show_offsite_reminder()
+
+    def _show_offsite_reminder(self):
+        """Post-install reminder: the collection lists off-site mods that the
+        installer can't download — the user must fetch + install them manually
+        (links live in the detail view's yellow "Off-site mods" panel)."""
+        offsite = self._col_offsite
+        self._col_offsite = []
+        if not offsite:
+            return
+        from gui_qt.confirm_overlay import ConfirmOverlay
+        names = [name or url for name, url in offsite]
+        shown = "\n".join(f"• {n}" for n in names[:8])
+        if len(names) > 8:
+            shown += "\n" + self.tr("…and {0} more").format(len(names) - 8)
+        ConfirmOverlay.show_over(
+            self, self.tr("Off-site mods to install"),
+            self.tr("This collection includes {0} off-site mod(s) the installer "
+                    "could not download:\n\n{1}\n\nDownload and install them "
+                    "manually — the links are in the collection page's "
+                    "\"Off-site mods\" panel.").format(len(offsite), shown),
+            None, confirm_label=self.tr("OK"), cancel_label=None, danger=False,
+            card_h=min(240 + 20 * min(len(names), 9), 460))
 
     def _dismiss_col_overlay(self):
         if self._col_install_overlay is not None:
@@ -3902,7 +3947,10 @@ class MainWindow(QMainWindow):
             self._notify(
                 self.tr("Reinstalling {0} mod(s); {1} skipped "
                 "(no archive found).").format(len(paths), len(missing)), "info")
-        self._install_paths(paths, preferred_names=preferred)
+        # clear_archives=False: reinstall CONSUMES an existing archive the user
+        # kept — deleting it would make the next reinstall impossible.
+        self._install_paths(paths, preferred_names=preferred,
+                            clear_archives=False)
 
     def _quick_update_mods(self, mod_names):
         """Auto-install the latest name-matched version for each update-flagged
@@ -5253,9 +5301,9 @@ class MainWindow(QMainWindow):
     # ---- Share code: export / import a modlist as a text string -----------
     def _export_profile_code(self):
         """Build a compact share code for the active profile (mods with a
-        modId + fileId, FOMOD/BAIN choices, load order) and show it with a
-        Copy-to-clipboard overlay. The build runs on a worker thread because it
-        may prefetch file sizes from Nexus."""
+        modId + fileId, FOMOD/BAIN choices, load order, enabled state,
+        separators) and show it with a Copy-to-clipboard overlay. The build
+        runs on a worker thread (modlist + sidecar reads)."""
         if self._gs.game_name is None:
             self._notify(self.tr("No game selected."), "warning")
             return
@@ -5263,9 +5311,9 @@ class MainWindow(QMainWindow):
         if game is None or not game.is_configured():
             self._notify(self.tr("No configured game selected."), "warning")
             return
-        # The code carries no file sizes (the recipient's install pipeline
-        # resolves them from Nexus), so no API call is needed to build it — but
-        # the modlist read + FOMOD/BAIN sidecar reads still run off the UI thread.
+        # No API call is needed to build the code (file sizes come from each
+        # mod's meta.ini, stamped at install time) — but the modlist read +
+        # FOMOD/BAIN sidecar reads still run off the UI thread.
         import threading
         threading.Thread(
             target=self._export_code_worker, args=(game,),
@@ -5281,9 +5329,9 @@ class MainWindow(QMainWindow):
                 self._export_code_ready.emit(None, 0)
                 return
             # read_modlist returns index 0 = highest priority (top of modlist);
-            # build_code_manifest expects exactly that order.
-            entries = [e for e in read_modlist(modlist_path)
-                       if not e.is_separator]
+            # build_code_manifest expects exactly that order. Separators are
+            # passed through — the manifest carries them as modlistSeparators.
+            entries = read_modlist(modlist_path)
             try:
                 from version import __version__ as app_version
             except Exception:
@@ -6024,7 +6072,7 @@ class MainWindow(QMainWindow):
     def _on_install_files_picked(self, paths):
         """GUI thread: start the install once archives were chosen in the portal."""
         if paths:
-            self._install_paths([str(p) for p in paths])
+            self._install_paths([str(p) for p in paths], clear_archives=False)
 
     # ---- Proton tools ------------------------------------------------------
     def _proton_game(self):
@@ -6372,6 +6420,12 @@ class MainWindow(QMainWindow):
             "Installing d3dcompiler_47",
             lambda plog: install_d3dcompiler_47(self._gs.game, log_fn=plog))
 
+    def _proton_install_xact(self):
+        from Utils.proton_tools import install_xact
+        self._run_proton_installer(
+            "Installing XACT audio (XAudio2)",
+            lambda plog: install_xact(self._gs.game, log_fn=plog))
+
     def _proton_install_dotnet(self, version: str):
         from Utils.proton_tools import install_dotnet
         self._run_proton_installer(
@@ -6596,7 +6650,7 @@ class MainWindow(QMainWindow):
     def _install_paths(self, paths: list[str], metas: dict | None = None,
                        previous_mod_name: str | None = None,
                        preferred_names: dict | None = None,
-                       on_all_done=None):
+                       on_all_done=None, clear_archives: bool = True):
         """Queue + install a list of archive paths (shared by the Install Mod
         button and the Downloads tab). FOMODs pause for the wizard mid-queue.
         *metas* optionally maps an archive path → a prebuilt NexusModMeta (the
@@ -6609,7 +6663,10 @@ class MainWindow(QMainWindow):
         dialog). Used by Quick Update, where the name match is already confirmed.
         *on_all_done* — optional no-arg callback fired once the whole batch finishes
         (after the summary), so a caller can chain post-install work (Quick Update
-        re-checks flags + reports its own summary)."""
+        re-checks flags + reports its own summary).
+        *clear_archives* — False for archives the USER supplied (Install Mod
+        button, Downloads tab, reinstall-from-archive): 'Clear archive after
+        install' only applies to archives the app downloaded itself."""
         if not paths:
             return
         game = self._gs.game
@@ -6630,7 +6687,8 @@ class MainWindow(QMainWindow):
                 "paths": list(paths), "metas": metas,
                 "previous_mod_name": previous_mod_name,
                 "preferred_names": preferred_names,
-                "on_all_done": on_all_done})
+                "on_all_done": on_all_done,
+                "clear_archives": clear_archives})
             _busy = self.tr("install") if getattr(self, "_install_running", False) \
                 else self.tr("deploy")
             self._notify(
@@ -6663,6 +6721,7 @@ class MainWindow(QMainWindow):
         self._install_prev_name = previous_mod_name
         self._install_preferred = dict(preferred_names or {})
         self._install_all_done_cb = on_all_done
+        self._install_clear_archives = clear_archives
         self._notify(self.tr("Installing {0} mod(s)…").format(len(paths)) if len(paths) > 1
                      else self.tr("Installing {0}…").format(Path(paths[0]).name), "info")
         self._install_next()
@@ -6932,8 +6991,11 @@ class MainWindow(QMainWindow):
     def _maybe_clear_archive(self, prepared):
         """Delete the source archive after a successful install, honouring the
         'Clear archive after install' / 'Keep FOMOD archives' settings (Tk
-        parity). Runs on the install worker thread; failures are non-fatal."""
+        parity). Runs on the install worker thread; failures are non-fatal.
+        Skipped for user-supplied archives (see _install_paths clear_archives)."""
         try:
+            if not getattr(self, "_install_clear_archives", True):
+                return
             from Utils.ui_config import (
                 load_clear_archive_after_install, load_keep_fomod_archives)
             if not load_clear_archive_after_install():
@@ -7192,7 +7254,8 @@ class MainWindow(QMainWindow):
         self._install_paths(b["paths"], metas=b["metas"],
                             previous_mod_name=b["previous_mod_name"],
                             preferred_names=b["preferred_names"],
-                            on_all_done=b["on_all_done"])
+                            on_all_done=b["on_all_done"],
+                            clear_archives=b.get("clear_archives", True))
 
     def _build_modlist(self) -> QWidget:
         self._modlist_model = ModListModel([])
@@ -8253,9 +8316,10 @@ class MainWindow(QMainWindow):
                              name="modlist-meta").start()
         if not preserve_overlays:
             self._modlist_model.set_conflicts({}, {})   # clear stale; recomputed async
-        # Persist edits back to this modlist; rebuild conflicts after each save.
+        # Persist edits back to this modlist; rebuild conflicts after each save
+        # (pure reorders that can't change the filemap skip the rebuild).
         self._modlist_model.modlist_path = ml_path
-        self._modlist_model.on_saved = self._rebuild_conflicts_async
+        self._modlist_model.on_saved = self._on_modlist_saved
         self._modlist_view.staging_dir = staging
         self._modlist_view.profile_dir = self._gs.profile_dir()
         self._modlist_view.game = self._gs.game
@@ -9208,12 +9272,168 @@ class MainWindow(QMainWindow):
         self._modlist_view.set_conflict_maps(
             loose_over or {}, loose_overby or {}, bsa_over, bsa_overby)
 
+    def _on_modlist_saved(self, edit_ctx=None):
+        """modlist.txt was rewritten (every structural edit funnels here via
+        model.save()). edit_ctx classifies the edit (see model.save):
+          ("move", moved, crossed) — when the move provably can't have changed
+            the filemap, skip EVERYTHING (worker + plugins reload + auto-deploy
+            are all no-ops).
+          ("toggle", changes) — when a disable provably can't change any
+            conflict product, rebuild ONLY the filemap (the toggled mod's
+            entries must still leave it) and auto-deploy; skip the scan.
+          None/unknown → full rebuild."""
+        if edit_ctx is not None:
+            kind = edit_ctx[0]
+            if kind == "move" and self._move_skips_rebuild(edit_ctx[1:]):
+                return
+            if kind == "toggle" and self._toggle_skips_conflict_scan(edit_ctx[1]):
+                self._rebuild_filemap_light_async()
+                return
+        self._rebuild_conflicts_async()
+
+    def _move_skips_rebuild(self, move_ctx) -> bool:
+        """True when a reorder left every moved mod on the same side of all
+        its loose-conflict partners, so no filemap winner, conflict code or
+        override pair can have changed. BSA winners follow PLUGIN order and
+        are unaffected by a mod move; disabled mods aren't in the maps (empty
+        partners). Sufficiency of the direct-pair maps: provider stacks are
+        priority-ordered, so crossing ANY co-provider means first crossing a
+        direct neighbour in that stack — which IS in overrides/overridden_by.
+        Conservative: any doubt (stale/missing conflict data, unknown mod)
+        → full rebuild. AMM_MOVE_SKIP_REBUILD=0 kills the fast path."""
+        if os.environ.get("AMM_MOVE_SKIP_REBUILD") == "0":
+            return False
+        # Maps must describe the CURRENT modlist: _conflict_maps_current is
+        # armed only when a build's result is accepted and dropped whenever a
+        # rebuild is queued (a drag racing an in-flight toggle rebuild would
+        # otherwise test against the pre-toggle maps). Skipped moves keep the
+        # maps valid — that's exactly what this predicate proves.
+        if not getattr(self, "_conflict_maps_current", False):
+            return False
+        data = self._conflict_data
+        if data is None:
+            return False
+        moved, crossed = move_ctx
+        crossed_set = set(crossed)
+        if moved and crossed_set:
+            for m in moved:
+                partners = ((data.overrides.get(m) or set())
+                            | (data.overridden_by.get(m) or set()))
+                if partners & crossed_set:
+                    return False
+        self._append_log(
+            f"[filemap] move: no conflict crossing — rebuild skipped "
+            f"(moved={len(moved)}, crossed={len(crossed_set)})")
+        return True
+
+    def _toggle_skips_conflict_scan(self, changes) -> bool:
+        """True when a toggle batch is disable-only and every disabled mod has
+        no loose-conflict partners, no plugin files, no BSA/BA2 archives and
+        no framework-exe files — then no ConflictData product changes: codes/
+        override maps lose nothing (the mod's sets were empty), plugin_owner
+        and the plugins panel keep the same winners, BSA conflicts follow
+        plugin order + bsa_index (untouched), framework statuses can't flip
+        (matching is by exe basename — the mod ships none). Only the filemap
+        file set shrinks → _rebuild_filemap_light_async. Enables are never
+        skipped: the maps can't prove a disabled mod won't CREATE conflicts.
+        Capability sets come from the same accepted build as the maps (see
+        ConflictData), so the _conflict_maps_current guard covers them too.
+        AMM_TOGGLE_LIGHT=0 kills the fast path."""
+        if os.environ.get("AMM_TOGGLE_LIGHT") == "0":
+            return False
+        if not getattr(self, "_conflict_maps_current", False):
+            return False
+        data = self._conflict_data
+        if data is None or not changes:
+            return False
+        for name, enabled in changes:
+            if enabled:
+                return False
+            if name not in data.overrides and name not in data.overridden_by:
+                return False   # unknown to the maps → treat as stale
+            if data.overrides.get(name) or data.overridden_by.get(name):
+                return False
+            if (name in data.plugin_mods or name in data.bsa_mods
+                    or name in data.framework_file_mods):
+                return False
+        self._append_log(
+            f"[filemap] toggle: disable-only, no conflicts/plugins/BSAs — "
+            f"conflict scan skipped ({len(changes)} mod(s), filemap-only)")
+        return True
+
+    def _rebuild_filemap_light_async(self):
+        """Disable fast path: rebuild ONLY the filemap (the incremental delta
+        removes the toggled mods' entries) — _toggle_skips_conflict_scan proved
+        every conflict product unchanged, so skip the scan, the panel reloads
+        and the conflict-map repaints. Shares the build lock + generation with
+        _rebuild_conflicts_async so full rebuilds serialize/supersede normally;
+        _conflict_maps_current deliberately stays armed (the maps still
+        describe reality — that is exactly what the predicate proved)."""
+        import threading
+        self._reassert_profile_paths()
+        gen = getattr(self, "_conflict_gen", 0) + 1
+        self._conflict_gen = gen
+        if not hasattr(self, "_conflict_build_lock"):
+            self._conflict_build_lock = threading.Lock()
+        g = self._gs.game
+        profile = self._gs.profile
+        if g is None or not profile:
+            return
+
+        def worker():
+            from Utils.perftrace import span
+            with self._conflict_build_lock:
+                if gen != self._conflict_gen:
+                    return   # superseded while waiting — the newer build covers us
+                from Utils.deploy_pipeline import _build_filemap_for_game
+
+                def _fm_log(m):
+                    m = str(m)
+                    try:
+                        m.encode("utf-8")
+                    except UnicodeEncodeError:
+                        m = m.encode("utf-8", "backslashreplace").decode(
+                            "utf-8", "replace")
+                    print(f"[filemap] {m}", flush=True)
+                    self._append_log(f"[filemap] {m}")
+
+                try:
+                    with span("build_filemap(light)"):
+                        _build_filemap_for_game(
+                            g, profile, log_fn=_fm_log, rescan_index=False)
+                except Exception as exc:
+                    print(f"[gui_qt] light filemap rebuild failed: {exc}",
+                          flush=True)
+            self._filemap_light_done.emit(gen)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_filemap_light_done(self, gen: int):
+        """UI thread: a filemap-only rebuild finished. Refresh only what the
+        deployed file SET touches — conflict maps, plugins panel, filter data
+        and framework banner are untouched by construction."""
+        if gen != self._conflict_gen:
+            return   # superseded by a full rebuild — its handler covers this
+        from Utils.perftrace import span
+        with span("on_filemap_light_done"):
+            if hasattr(self, "_data_view"):
+                self._data_view.mark_dirty()
+            if hasattr(self, "_text_files_view"):
+                self._text_files_view.mark_dirty()
+            self._refresh_modlist_stats()
+            # Active filters may key on the enabled state — reapply from the
+            # in-memory FilterData (no disk rescan needed).
+            self._apply_modlist_filters()
+        self._maybe_auto_deploy()
+
     def _rebuild_conflicts_async(self, rescan_index: bool = False):
         """Build the filemap off-thread; the worker emits _conflicts_ready
         (queued → UI thread). A generation counter drops results from a
         superseded reload (user switched game before the build finished).
         rescan_index=True forces a full disk rescan (Refresh button)."""
         import threading
+        # The maps the move fast-path tests are about to be superseded.
+        self._conflict_maps_current = False
         self._reassert_profile_paths()
         gen = getattr(self, "_conflict_gen", 0) + 1
         self._conflict_gen = gen
@@ -9382,6 +9602,10 @@ class MainWindow(QMainWindow):
         from Utils.perftrace import span
         with span("on_conflicts_ready"):
             self._conflict_data = data
+            # These maps now describe the on-disk modlist — arm the move
+            # fast-path (see _move_skips_rebuild). Only valid if no newer
+            # rebuild was queued meanwhile; the gen check above ensures that.
+            self._conflict_maps_current = True
             with span("model.set_filemap_results"):
                 # Conflicts + the filemap-derived flag overlays (info=pre-RTX,
                 # root=custom root rule) in one dataChanged pass.
@@ -9433,11 +9657,16 @@ class MainWindow(QMainWindow):
             # rebuild — reloading earlier (on the toggle) races the stale filemap.
             with span("reload_plugins"):
                 self._reload_plugins()
-        # Auto deploy: if the game has auto_deploy enabled, deploy after every
-        # successful conflict/filemap rebuild (enable/disable/reorder/install) —
-        # but NOT when the rebuild was itself triggered by that auto-deploy
-        # (deploy → _reload_modlist → rebuild → here again), or we'd loop.
-        # Tk parity: gui.py _on_filemap_rebuilt.
+        self._maybe_auto_deploy()
+
+    def _maybe_auto_deploy(self):
+        """Auto deploy: if the game has auto_deploy enabled, deploy after every
+        successful conflict/filemap rebuild (enable/disable/reorder/install) —
+        but NOT when the rebuild was itself triggered by that auto-deploy
+        (deploy → _reload_modlist → rebuild → here again), or we'd loop.
+        Tk parity: gui.py _on_filemap_rebuilt. Called from _on_conflicts_ready
+        AND _on_filemap_light_done (a disabled mod's files must still leave
+        the game folder)."""
         if self._auto_deploy_in_progress:
             self._auto_deploy_in_progress = False
         else:
@@ -9563,7 +9792,8 @@ class MainWindow(QMainWindow):
         # Page 4: the real Downloads view.
         from gui_qt.downloads_view import DownloadsView
         self._downloads_view = DownloadsView()
-        self._downloads_view.on_install = self._install_paths
+        self._downloads_view.on_install = \
+            lambda paths: self._install_paths(paths, clear_archives=False)
         self._downloads_view.selection_changed.connect(
             self._update_downloads_footer)
         self._plugin_stack.addWidget(self._downloads_view)

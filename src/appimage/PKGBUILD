@@ -134,6 +134,8 @@ mkdir -p "\$MOD_MANAGER_PROFILES_DIR"
 # \`:=\` respects a user override.
 : "\${QT_QPA_PLATFORM:=xcb}"
 export QT_QPA_PLATFORM
+: "\${FONTCONFIG_FILE:=\$APP_SHARE/fonts.conf}"
+export FONTCONFIG_FILE
 case "\$1" in
     deploy|restore|list-games|list-profiles|clear-credentials)
         exec python3 "\$APP_SHARE/cli.py" "\$@" ;;
@@ -142,6 +144,10 @@ case "\$1" in
 esac
 EOF
     chmod 0755 "$pkgdir/usr/bin/mod-manager"
+
+    # Private fontconfig config — see fonts.conf header + the FONTCONFIG_FILE
+    # export in the wrapper above.
+    install -Dm644 "$_src/appimage/fonts.conf" "$app_share/fonts.conf"
 
     install -Dm644 "$_src/appimage/mod-manager.desktop" \
         "$pkgdir/usr/share/applications/mod-manager.desktop"

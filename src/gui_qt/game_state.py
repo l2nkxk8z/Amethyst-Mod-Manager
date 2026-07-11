@@ -39,6 +39,14 @@ class ConflictData:
     # worker — detect_frameworks re-reads filemap.txt (+ the mod index), which
     # is too slow for the UI thread on a 100k-file modlist.
     framework_statuses: list = field(default_factory=list)
+    # Toggle-capability sets (index-derived, same cached scan as the flags):
+    # mods shipping plugin files / BSA-BA2 archives / files whose basename
+    # matches a framework exe. Drive the disable fast path — a mod in none of
+    # these can be disabled without recomputing plugin_owner, BSA conflicts or
+    # framework statuses (see app._toggle_skips_conflict_scan).
+    plugin_mods: set = field(default_factory=set)
+    bsa_mods: set = field(default_factory=set)
+    framework_file_mods: set = field(default_factory=set)
 
 
 class GameState:
@@ -171,7 +179,9 @@ class GameState:
         with span("_build_plugin_owner"):
             data.plugin_owner = self._build_plugin_owner(g)
         with span("_build_index_flag_mods"):
-            data.prertx_mods, data.root_rule_mods = self._build_index_flag_mods(g)
+            (data.prertx_mods, data.root_rule_mods, data.plugin_mods,
+             data.bsa_mods, data.framework_file_mods) = \
+                self._build_index_flag_mods(g)
         with span("detect_frameworks"):
             data.framework_statuses = self._detect_frameworks(g)
         return data
@@ -188,26 +198,29 @@ class GameState:
             print(f"[gui_qt] framework detect error: {exc}", flush=True)
             return []
 
-    def _build_index_flag_mods(self, g) -> "tuple[set, set]":
-        """(prertx_mods, root_rule_mods) from modindex.bin — the info/root flag
-        inputs. pre-RTX = a mod with a file under a remapped source prefix (e.g.
-        natives/x64/); root-rule = a mod owning files matched by a custom routing
-        rule with dest="". Ports gui/modlist_panel pre-RTX detect (~9307) +
-        _compute_root_rule_mods (1699). Runs on the conflict worker.
+    def _build_index_flag_mods(self, g) -> "tuple[set, set, set, set, set]":
+        """(prertx_mods, root_rule_mods, plugin_mods, bsa_mods,
+        framework_file_mods) from modindex.bin. pre-RTX = a mod with a file
+        under a remapped source prefix (e.g. natives/x64/); root-rule = a mod
+        owning files matched by a custom routing rule with dest="". Ports
+        gui/modlist_panel pre-RTX detect (~9307) + _compute_root_rule_mods
+        (1699). The last three are the toggle-capability sets (see
+        ConflictData). Runs on the conflict worker.
 
-        Both scans depend only on the index content + static game rules — a
+        All scans depend only on the index content + static game rules — a
         mod toggle/reorder doesn't touch modindex.bin — so the result is
         cached by (index path, mtime) and per-toggle rebuilds skip the
         ~100-150 ms file walk entirely."""
         from Utils.perftrace import span
+        _empty = (set(), set(), set(), set(), set())
         staging = self.staging_dir()
         if staging is None:
-            return set(), set()
+            return _empty
         index_path = staging.parent / "modindex.bin"
         try:
             mtime = index_path.stat().st_mtime
         except OSError:
-            return set(), set()
+            return _empty
         cache_key = (str(index_path), mtime, getattr(g, "name", None))
         cached = getattr(self, "_flag_mods_cache", None)
         if cached is not None and cached[0] == cache_key:
@@ -219,7 +232,7 @@ class GameState:
         except Exception:
             index = None
         if not index:
-            return set(), set()
+            return _empty
         # pre-RTX: any file under a remapped source prefix.
         prertx: set = set()
         try:
@@ -235,6 +248,36 @@ class GameState:
                         if any(rel_key.startswith(p) for p in prefixes):
                             prertx.add(mod_name)
                             break
+        # Toggle capabilities: which mods ship plugin files / BSA-BA2s / files
+        # basename-matching a framework exe (framework_detect matches staged
+        # keys and disabled-mod files by basename). Root-namespace files
+        # included — broader only makes the fast path MORE conservative.
+        plugin_mods: set = set()
+        bsa_mods: set = set()
+        framework_mods: set = set()
+        plugin_exts = tuple(e.lower() for e in
+                            (getattr(g, "plugin_extensions", []) or [])) \
+            or (".esp", ".esm", ".esl")
+        try:
+            fw_basenames = {
+                str(p).replace("\\", "/").rstrip("/").rsplit("/", 1)[-1].lower()
+                for p in (getattr(g, "frameworks", {}) or {}).values()}
+        except Exception:
+            fw_basenames = set()
+        with span("flag_mods: capability scan"):
+            for mod_name, entry in index.items():
+                if not isinstance(entry, tuple):
+                    continue
+                normal = entry[0] or {}
+                root = (entry[1] or {}) if len(entry) >= 2 else {}
+                for rel_key in (*normal, *root):
+                    base = rel_key.rsplit("/", 1)[-1]
+                    if base.endswith(plugin_exts):
+                        plugin_mods.add(mod_name)
+                    if base.endswith((".bsa", ".ba2")):
+                        bsa_mods.add(mod_name)
+                    if fw_basenames and base in fw_basenames:
+                        framework_mods.add(mod_name)
         # root-rule: mods owning files matched by a dest="" custom routing rule.
         root_rule: set = set()
         try:
@@ -249,8 +292,9 @@ class GameState:
                     root_rule = mods_matching_root_rules(mod_files, rules)
         except Exception:
             root_rule = set()
-        self._flag_mods_cache = (cache_key, (prertx, root_rule))
-        return prertx, root_rule
+        result = (prertx, root_rule, plugin_mods, bsa_mods, framework_mods)
+        self._flag_mods_cache = (cache_key, result)
+        return result
 
     def _build_plugin_owner(self, g) -> dict[str, str]:
         """Map plugin filename (lower) → the mod that wins it, from filemap.txt.

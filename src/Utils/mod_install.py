@@ -484,6 +484,25 @@ def _is_disk_full_error(text: "str | None") -> bool:
     ))
 
 
+def _is_truncated_archive_error(text: "str | None") -> bool:
+    """True if *text* (tool stderr / exception text) reports a truncated or
+    incomplete archive — an interrupted download, not an extractor problem.
+
+    Covers 7z ("Unexpected end of archive"), bsdtar on rar/tar ("Truncated
+    input file: needed N bytes, only M available") and bsdtar's streaming zip
+    reader, which hits the short deflate stream instead ("ZIP decompression
+    failed (-5)")."""
+    if not text:
+        return False
+    low = text.lower()
+    return any(s in low for s in (
+        "truncated", "unexpected end of archive",
+        "unexpected end of file", "unexpected end of data",
+        "unexpected eof", "premature end",
+        "zip decompression failed",
+    ))
+
+
 def _is_small_fs(path: str, limit_gib: int = 8) -> bool:
     """True if *path*'s mount is small enough to be a tmpfs ramdisk (e.g. /tmp)."""
     try:
@@ -939,10 +958,20 @@ def prepare_archive(archive_path: str, game, profile_dir: Path, *,
                 extract_dir = new_dir
                 _log_extract_location(extract_dir, log_fn)
                 extracted = _extract_archive(str(archive), str(extract_dir),
-                                             log_fn, cancel=cancel)
+                                             log_fn, cancel=cancel,
+                                             error_sink=extract_errors)
     if not extracted:
         if cancel is not None and cancel.is_set():
             log_fn("Install: extraction cancelled — removing temp files.")
+        elif any(_is_truncated_archive_error(e) for e in extract_errors):
+            try:
+                size_gb = archive.stat().st_size / (1024 ** 3)
+                got = f" (file on disk is {size_gb:.2f} GB)"
+            except OSError:
+                got = ""
+            log_fn(f"Install failed: the archive appears incomplete or "
+                   f"truncated{got} — the download was likely interrupted. "
+                   f"Re-download {archive.name} and try again.")
         else:
             log_fn("Install failed: could not extract the archive.")
         shutil.rmtree(extract_dir, ignore_errors=True)
@@ -2091,6 +2120,10 @@ def _write_install_meta(dest_root: Path, archive: Path, game, log_fn: LogFn,
             meta = NexusModMeta()
         # Always stamp the local install fields.
         meta.installation_file = archive.name
+        try:
+            meta.file_size = archive.stat().st_size
+        except OSError:
+            pass
         if not getattr(meta, "installed", ""):
             meta.installed = datetime.now().isoformat(timespec="seconds")
         # Carry the endorsed flag from a replaced install (Tk parity).

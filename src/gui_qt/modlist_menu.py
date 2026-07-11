@@ -542,6 +542,7 @@ def _move_to_separator(view, model, mod_rows, sep_name):
         return
     moved_names = {model.entry(r).name for r in rows}
     moved = [model.entry(r) for r in rows]           # preserve selection order
+    old_order = [e.name for e in model.natural_entries() if not e.is_separator]
     # Body = the NATURAL order minus the moved mods — the display may be a
     # sorted/inverted permutation and must never be persisted as the new order.
     body = [e for e in model.natural_entries()
@@ -552,8 +553,12 @@ def _move_to_separator(view, model, mod_rows, sep_name):
         return
     body[sep_idx + 1:sep_idx + 1] = moved
     model.set_entries(body)
+    # Pure reorder — hand the app a "move" ctx so a repositioning that crossed
+    # no conflicting mod skips the conflict rebuild (see app._on_modlist_saved).
+    new_order = [e.name for e in model.natural_entries() if not e.is_separator]
+    ctx = model._move_ctx(old_order, new_order, [e.name for e in moved])
     try:
-        model.save()
+        model.save(edit_ctx=None if ctx is None else ("move",) + ctx)
     except Exception:
         pass
 
@@ -842,6 +847,7 @@ def _sort_selected_alphabetically(view, model, mod_rows):
     # permutation); at each selected slot drop in the next sorted entry.
     # set_entries re-appends boundaries.
     sel_ids = {id(e) for e in sel}
+    old_order = [e.name for e in model.natural_entries() if not e.is_separator]
     body: list = []
     it = iter(sorted_entries)
     for e in model.natural_entries():
@@ -849,8 +855,12 @@ def _sort_selected_alphabetically(view, model, mod_rows):
             continue
         body.append(next(it) if id(e) in sel_ids else e)
     model.set_entries(body)
+    # Pure (non-contiguous) reorder — _move_ctx handles per-mod crossings, so
+    # a sort that flipped no conflicting pair skips the conflict rebuild.
+    new_order = [e.name for e in model.natural_entries() if not e.is_separator]
+    ctx = model._move_ctx(old_order, new_order, [e.name for e in sel])
     try:
-        model.save()
+        model.save(edit_ctx=None if ctx is None else ("move",) + ctx)
     except Exception:
         pass
 

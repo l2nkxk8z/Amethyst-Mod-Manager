@@ -2799,6 +2799,10 @@ The original exe is kept as {0}.</translation>
         <translation>Search files… (try !.dds)</translation>
     </message>
     <message>
+        <source>Install XACT audio (XAudio2)</source>
+        <translation>Install XACT audio (XAudio2)</translation>
+    </message>
+    <message>
         <source>Edit custom game…</source>
         <translation>Edit custom game…</translation>
     </message>
@@ -2989,6 +2993,30 @@ Remove the appended-collection entry?</translation>
     <message>
         <source>Install paused — {0} mod(s) installed.</source>
         <translation>Install paused — {0} mod(s) installed.</translation>
+    </message>
+    <message>
+        <source>…and {0} more</source>
+        <translation>…and {0} more</translation>
+    </message>
+    <message>
+        <source>Off-site mods to install</source>
+        <translation>Off-site mods to install</translation>
+    </message>
+    <message>
+        <source>This collection includes {0} off-site mod(s) the installer could not download:
+
+{1}
+
+Download and install them manually — the links are in the collection page's "Off-site mods" panel.</source>
+        <translation>This collection includes {0} off-site mod(s) the installer could not download:
+
+{1}
+
+Download and install them manually — the links are in the collection page's "Off-site mods" panel.</translation>
+    </message>
+    <message>
+        <source>OK</source>
+        <translation>OK</translation>
     </message>
     <message>
         <source>A load-order reset is already running.</source>
@@ -5941,8 +5969,8 @@ Please restart the wizard and install Script Merger first.</translation>
         <translation>Clear archive after install</translation>
     </message>
     <message>
-        <source>Delete a mod's downloaded archive after it is extracted.</source>
-        <translation>Delete a mod's downloaded archive after it is extracted.</translation>
+        <source>Delete a mod's downloaded archive after it is extracted. Only applies to archives Amethyst downloaded itself — installs from the Install Mod button or the Downloads tab keep their archive.</source>
+        <translation>Delete a mod's downloaded archive after it is extracted. Only applies to archives Amethyst downloaded itself — installs from the Install Mod button or the Downloads tab keep their archive.</translation>
     </message>
     <message>
         <source>Keep FOMOD archives</source>
@@ -6101,6 +6129,18 @@ Please restart the wizard and install Script Merger first.</translation>
     <message>
         <source>Import</source>
         <translation>Import</translation>
+    </message>
+    <message>
+        <source>Not a valid share code.</source>
+        <translation>Not a valid share code.</translation>
+    </message>
+    <message>
+        <source>, ~{0} to download</source>
+        <translation>, ~{0} to download</translation>
+    </message>
+    <message>
+        <source>exported {0}</source>
+        <translation>exported {0}</translation>
     </message>
 </context>
 <context>
