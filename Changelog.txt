@@ -1,5 +1,12 @@
 - v2.0.3
+### Game support
+- Added Hollow Knight: Silksong
+- Added Windrose
+- Added Pacific Drive
+### Additions
+- Added support for detecting games installed via Lutris
 - Added ue5 pak conflict detection
+### Bug Fixes
 - Fixed alphabetical sorting when the priority column is reversed
 - Fixed overflow errors when installing via the NXM handler
 
