@@ -2120,6 +2120,10 @@ def _write_install_meta(dest_root: Path, archive: Path, game, log_fn: LogFn,
             meta = NexusModMeta()
         # Always stamp the local install fields.
         meta.installation_file = archive.name
+        try:
+            meta.file_size = archive.stat().st_size
+        except OSError:
+            pass
         if not getattr(meta, "installed", ""):
             meta.installed = datetime.now().isoformat(timespec="seconds")
         # Carry the endorsed flag from a replaced install (Tk parity).

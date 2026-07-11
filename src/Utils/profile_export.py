@@ -26,7 +26,9 @@ A *row* is a plain dict describing one mod's export configuration::
         "has_bain":      bool,
         "fomod_export":  bool,  # include installer choices in the export
         "versions_fetched": bool,
-        "size_bytes":    int,
+        "size_bytes":    int,   # original archive size from meta.ini (0 if unknown)
+        "root_folder":   bool,  # deploys to game root (meta.ini rootFolder)
+        "enabled":       bool,  # modlist enabled state of the source entry
         "source":        str,   # "nexus" | "direct" | "bundle" | "ignore"
         "direct_url":    str,
     }
@@ -67,6 +69,8 @@ def load_rows(entries, game) -> list[dict]:
         version = ""
         category_id = 0
         category_name = ""
+        size_bytes = 0
+        root_folder = False
         if staging_root:
             meta_path = Path(staging_root) / name / "meta.ini"
             if meta_path.is_file():
@@ -77,6 +81,8 @@ def load_rows(entries, game) -> list[dict]:
                     version = meta.version or ""
                     category_id = meta.category_id or 0
                     category_name = meta.category_name or ""
+                    size_bytes = meta.file_size or 0
+                    root_folder = bool(meta.root_folder)
                 except Exception:
                     pass
 
@@ -113,7 +119,9 @@ def load_rows(entries, game) -> list[dict]:
             "has_bain":         has_bain,
             "fomod_export":     has_installer,
             "versions_fetched": False,
-            "size_bytes":       0,
+            "size_bytes":       size_bytes,
+            "root_folder":      root_folder,
+            "enabled":          bool(getattr(entry, "enabled", True)),
             "source":           "nexus",
             "direct_url":       "",
         })
@@ -245,6 +253,14 @@ def build_manifest(rows, game_domain: str, app_version: str, *,
             "source":   source,
             "optional": row["optional"],
         }
+        # Carry a disabled modlist state (enabled entries stay implicit). The
+        # importer stages the mod normally, then marks it disabled.
+        if row.get("enabled") is False:
+            mod_entry["enabled"] = False
+        # Root-deploy mods use the Nexus-collections "dinput" install type —
+        # the importer already maps details.type == "dinput" to meta rootFolder.
+        if row.get("root_folder"):
+            mod_entry["details"] = {"type": "dinput"}
 
         # Include version and category from meta.ini if available.
         row_version = row.get("version") or ""
@@ -522,9 +538,10 @@ CODE_PREFIX = "AMMCODE1:"   # version tag; bump the digit on a format change.
 
 def build_code_manifest(entries, game, app_version: str, *,
                         profile_name=None) -> dict:
-    """Build a share-code manifest from *entries* — non-separator modlist entries
-    in ``read_modlist`` order (index 0 = HIGHEST priority = top of modlist).
-    Includes only mods with both a modId and a fileId; embeds FOMOD/BAIN choices.
+    """Build a share-code manifest from *entries* — modlist entries (separators
+    included) in ``read_modlist`` order (index 0 = HIGHEST priority = top of
+    modlist). Includes only mods with both a modId and a fileId; embeds
+    FOMOD/BAIN choices, per-mod enabled state and root-deploy flags.
 
     The collection-install pipeline that consumes an imported manifest treats the
     ``mods`` array as LOW-priority first (``mods[-1]`` becomes the top of the
@@ -532,8 +549,19 @@ def build_code_manifest(entries, game, app_version: str, *,
     priority first, so we reverse when writing the array to keep the imported load
     order identical to the source. No separate ``loadOrder`` block is emitted (that
     would switch the importer onto its FBLO code path); the mods-array order alone
-    carries the load order, matching the ``.amethyst`` export."""
-    rows = load_rows(entries, game)
+    carries the load order, matching the ``.amethyst`` export.
+
+    Beyond the mods array, the manifest carries:
+
+    * ``modlistSeparators`` — the source modlist's separators, TOP-first, each
+      with its member mod names (the exported mods between it and the next
+      separator, modlist order) plus optional ``color``/``locked``. The importer
+      re-inserts each one above its first surviving member.
+    * ``info.exported`` / ``info.gameName`` / ``info.totalSize`` — display
+      metadata for the import preview (ISO timestamp, game display name, sum of
+      the known archive sizes)."""
+    mod_entries = [e for e in entries if not getattr(e, "is_separator", False)]
+    rows = load_rows(mod_entries, game)
     # Keep only Nexus-resolvable mods: need modId + a fileId (from meta or label).
     keep = [r for r in rows if r.get("mod_id") and _row_file_id(r)]
     game_domain = (getattr(game, "nexus_game_domain", "") or "") if game else ""
@@ -545,10 +573,58 @@ def build_code_manifest(entries, game, app_version: str, *,
         list(reversed(keep)), game_domain, app_version,
         game_name=game_name, profile_dir=profile_dir)
 
-    # Carry the source profile name so the imported profile can be named after it.
+    kept_names = {r["name"] for r in keep}
+    separators = _separator_blocks(entries, kept_names, profile_dir)
+    if separators:
+        manifest["modlistSeparators"] = separators
+
+    # Display metadata for the import preview. The profile name lets the
+    # imported profile be named after the source.
+    info = manifest.setdefault("info", {})
     if profile_name:
-        manifest.setdefault("info", {})["name"] = profile_name
+        info["name"] = profile_name
+    if game_name:
+        info["gameName"] = game_name
+    from datetime import datetime
+    info["exported"] = datetime.now().isoformat(timespec="seconds")
+    total_size = sum(
+        int((m.get("source") or {}).get("fileSize") or 0)
+        for m in manifest.get("mods") or [])
+    if total_size:
+        info["totalSize"] = total_size
     return manifest
+
+
+def _separator_blocks(entries, kept_names: set, profile_dir) -> list[dict]:
+    """Build the ``modlistSeparators`` manifest block: one dict per separator in
+    modlist order (top-first) with the names of its exported member mods (the
+    kept mods between it and the next separator). Separators whose group has no
+    exported member are dropped — the importer would have nothing to anchor them
+    to. Colors / locks come from the profile's separator state."""
+    colors = {}
+    locks = {}
+    if profile_dir:
+        try:
+            from Utils.profile_state import read_separator_colors, read_separator_locks
+            colors = read_separator_colors(Path(profile_dir))
+            locks = read_separator_locks(Path(profile_dir))
+        except Exception:
+            pass
+
+    blocks: list[dict] = []
+    current: dict | None = None
+    for entry in entries:
+        name = getattr(entry, "name", None) or str(entry)
+        if getattr(entry, "is_separator", False):
+            current = {"name": name, "mods": []}
+            if colors.get(name):
+                current["color"] = colors[name]
+            if locks.get(name):
+                current["locked"] = True
+            blocks.append(current)
+        elif current is not None and name in kept_names:
+            current["mods"].append(name)
+    return [b for b in blocks if b["mods"]]
 
 
 def encode_manifest(manifest: dict) -> str:

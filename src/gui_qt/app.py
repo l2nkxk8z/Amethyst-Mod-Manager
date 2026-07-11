@@ -5300,9 +5300,9 @@ class MainWindow(QMainWindow):
     # ---- Share code: export / import a modlist as a text string -----------
     def _export_profile_code(self):
         """Build a compact share code for the active profile (mods with a
-        modId + fileId, FOMOD/BAIN choices, load order) and show it with a
-        Copy-to-clipboard overlay. The build runs on a worker thread because it
-        may prefetch file sizes from Nexus."""
+        modId + fileId, FOMOD/BAIN choices, load order, enabled state,
+        separators) and show it with a Copy-to-clipboard overlay. The build
+        runs on a worker thread (modlist + sidecar reads)."""
         if self._gs.game_name is None:
             self._notify(self.tr("No game selected."), "warning")
             return
@@ -5310,9 +5310,9 @@ class MainWindow(QMainWindow):
         if game is None or not game.is_configured():
             self._notify(self.tr("No configured game selected."), "warning")
             return
-        # The code carries no file sizes (the recipient's install pipeline
-        # resolves them from Nexus), so no API call is needed to build it — but
-        # the modlist read + FOMOD/BAIN sidecar reads still run off the UI thread.
+        # No API call is needed to build the code (file sizes come from each
+        # mod's meta.ini, stamped at install time) — but the modlist read +
+        # FOMOD/BAIN sidecar reads still run off the UI thread.
         import threading
         threading.Thread(
             target=self._export_code_worker, args=(game,),
@@ -5328,9 +5328,9 @@ class MainWindow(QMainWindow):
                 self._export_code_ready.emit(None, 0)
                 return
             # read_modlist returns index 0 = highest priority (top of modlist);
-            # build_code_manifest expects exactly that order.
-            entries = [e for e in read_modlist(modlist_path)
-                       if not e.is_separator]
+            # build_code_manifest expects exactly that order. Separators are
+            # passed through — the manifest carries them as modlistSeparators.
+            entries = read_modlist(modlist_path)
             try:
                 from version import __version__ as app_version
             except Exception:

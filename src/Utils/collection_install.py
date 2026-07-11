@@ -1355,6 +1355,22 @@ def run_collection_install(
         except Exception as exc:
             log(f"Collection install: reconcile modlist failed: {exc}")
 
+    # Share-code extras — must run AFTER the reconcile passes above (the final
+    # reconcile force-enables every entry and would shove freshly-inserted
+    # separators, which have no install_order key, to the bottom).
+    if modlist_path.is_file() and not _col_pause.is_set():
+        try:
+            _apply_schema_disabled_mods(
+                modlist_path, collection_schema, schema_file_id_to_pos,
+                install_order, log)
+        except Exception as exc:
+            log(f"Collection install: apply disabled states failed: {exc}")
+        try:
+            _apply_manifest_separators(
+                profile_dir, modlist_path, collection_schema, log)
+        except Exception as exc:
+            log(f"Collection install: apply separators failed: {exc}")
+
     # Restore the original profile dir
     try:
         game.set_active_profile_dir(old_profile_dir)
@@ -1591,6 +1607,103 @@ def _write_new_profile_modlist(profile_dir, modlist_path, install_order, log):
         log(f"Collection install: wrote modlist.txt with {len(final_entries)} entries")
     except Exception as exc:
         log(f"Collection install: failed to write modlist.txt: {exc}")
+
+
+def _apply_schema_disabled_mods(modlist_path, collection_schema,
+                                schema_file_id_to_pos, install_order, log):
+    """Mark mods the manifest carries as ``enabled: false`` disabled in
+    modlist.txt (share-code exports include the source profile's disabled mods
+    so the recipient gets the same modlist, not an everything-on one). The mod
+    is resolved to its staged folder via its priority key in ``install_order``
+    (covers renamed/suffixed folders), falling back to a name match."""
+    schema_mods: list[dict] = collection_schema.get("mods", [])
+    key_to_folder: dict[int, str] = {key: folder for key, folder in install_order}
+    targets: set[str] = set()
+    for m in schema_mods:
+        if m.get("enabled") is not False:
+            continue
+        folder = ""
+        fid = (m.get("source") or {}).get("fileId")
+        if fid is not None:
+            try:
+                folder = key_to_folder.get(
+                    schema_file_id_to_pos.get(int(fid), -1), "")
+            except (TypeError, ValueError):
+                folder = ""
+        if not folder:
+            folder = m.get("name") or ""
+        if folder:
+            targets.add(folder.lower())
+    if not targets:
+        return
+    entries = read_modlist(modlist_path)
+    changed = 0
+    for e in entries:
+        if (not e.is_separator and not e.locked and e.enabled
+                and e.name.lower() in targets):
+            e.enabled = False
+            changed += 1
+    if changed:
+        write_modlist(modlist_path, entries)
+        log(f"Collection install: disabled {changed} mod(s) "
+            f"(manifest enabled=false).")
+
+
+def _apply_manifest_separators(profile_dir, modlist_path, collection_schema, log):
+    """Re-insert the source modlist's separators from the manifest's
+    ``modlistSeparators`` block (share-code exports; see
+    ``profile_export._separator_blocks``). Each separator lands above its first
+    member mod present in modlist.txt; separators whose name already exists
+    (append / update re-runs) or whose members all fell out are skipped.
+    Colors / locks are written to the profile's separator state for the
+    separators actually inserted."""
+    seps: list[dict] = collection_schema.get("modlistSeparators") or []
+    if not seps:
+        return
+    entries = read_modlist(modlist_path)
+    existing = {e.name.lower() for e in entries}
+    colors: dict[str, str] = {}
+    locks: dict[str, bool] = {}
+    added = 0
+    for sep in seps:
+        name = (sep.get("name") or "").strip()
+        if not name:
+            continue
+        if not name.endswith("_separator"):
+            name += "_separator"
+        if name.lower() in existing:
+            continue
+        members = {str(m).lower() for m in (sep.get("mods") or [])}
+        idx = next((i for i, e in enumerate(entries)
+                    if not e.is_separator and e.name.lower() in members), None)
+        if idx is None:
+            continue
+        entries.insert(idx, ModEntry(name=name, enabled=True, locked=True,
+                                     is_separator=True))
+        existing.add(name.lower())
+        added += 1
+        if sep.get("color"):
+            colors[name] = str(sep["color"])
+        if sep.get("locked"):
+            locks[name] = True
+    if not added:
+        return
+    write_modlist(modlist_path, entries)
+    try:
+        from Utils.profile_state import (
+            read_separator_colors, write_separator_colors,
+            read_separator_locks, write_separator_locks)
+        if colors:
+            merged_c = read_separator_colors(profile_dir)
+            merged_c.update(colors)
+            write_separator_colors(profile_dir, merged_c)
+        if locks:
+            merged_l = read_separator_locks(profile_dir)
+            merged_l.update(locks)
+            write_separator_locks(profile_dir, merged_l)
+    except Exception as exc:
+        log(f"Collection install: separator colors/locks skipped: {exc}")
+    log(f"Collection install: inserted {added} separator(s) from manifest.")
 
 
 def _write_collection_plugins(game, profile_dir, plugins_path, collection_schema,
