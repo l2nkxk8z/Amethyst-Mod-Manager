@@ -3946,7 +3946,10 @@ class MainWindow(QMainWindow):
             self._notify(
                 self.tr("Reinstalling {0} mod(s); {1} skipped "
                 "(no archive found).").format(len(paths), len(missing)), "info")
-        self._install_paths(paths, preferred_names=preferred)
+        # clear_archives=False: reinstall CONSUMES an existing archive the user
+        # kept — deleting it would make the next reinstall impossible.
+        self._install_paths(paths, preferred_names=preferred,
+                            clear_archives=False)
 
     def _quick_update_mods(self, mod_names):
         """Auto-install the latest name-matched version for each update-flagged
@@ -6068,7 +6071,7 @@ class MainWindow(QMainWindow):
     def _on_install_files_picked(self, paths):
         """GUI thread: start the install once archives were chosen in the portal."""
         if paths:
-            self._install_paths([str(p) for p in paths])
+            self._install_paths([str(p) for p in paths], clear_archives=False)
 
     # ---- Proton tools ------------------------------------------------------
     def _proton_game(self):
@@ -6640,7 +6643,7 @@ class MainWindow(QMainWindow):
     def _install_paths(self, paths: list[str], metas: dict | None = None,
                        previous_mod_name: str | None = None,
                        preferred_names: dict | None = None,
-                       on_all_done=None):
+                       on_all_done=None, clear_archives: bool = True):
         """Queue + install a list of archive paths (shared by the Install Mod
         button and the Downloads tab). FOMODs pause for the wizard mid-queue.
         *metas* optionally maps an archive path → a prebuilt NexusModMeta (the
@@ -6653,7 +6656,10 @@ class MainWindow(QMainWindow):
         dialog). Used by Quick Update, where the name match is already confirmed.
         *on_all_done* — optional no-arg callback fired once the whole batch finishes
         (after the summary), so a caller can chain post-install work (Quick Update
-        re-checks flags + reports its own summary)."""
+        re-checks flags + reports its own summary).
+        *clear_archives* — False for archives the USER supplied (Install Mod
+        button, Downloads tab, reinstall-from-archive): 'Clear archive after
+        install' only applies to archives the app downloaded itself."""
         if not paths:
             return
         game = self._gs.game
@@ -6674,7 +6680,8 @@ class MainWindow(QMainWindow):
                 "paths": list(paths), "metas": metas,
                 "previous_mod_name": previous_mod_name,
                 "preferred_names": preferred_names,
-                "on_all_done": on_all_done})
+                "on_all_done": on_all_done,
+                "clear_archives": clear_archives})
             _busy = self.tr("install") if getattr(self, "_install_running", False) \
                 else self.tr("deploy")
             self._notify(
@@ -6707,6 +6714,7 @@ class MainWindow(QMainWindow):
         self._install_prev_name = previous_mod_name
         self._install_preferred = dict(preferred_names or {})
         self._install_all_done_cb = on_all_done
+        self._install_clear_archives = clear_archives
         self._notify(self.tr("Installing {0} mod(s)…").format(len(paths)) if len(paths) > 1
                      else self.tr("Installing {0}…").format(Path(paths[0]).name), "info")
         self._install_next()
@@ -6976,8 +6984,11 @@ class MainWindow(QMainWindow):
     def _maybe_clear_archive(self, prepared):
         """Delete the source archive after a successful install, honouring the
         'Clear archive after install' / 'Keep FOMOD archives' settings (Tk
-        parity). Runs on the install worker thread; failures are non-fatal."""
+        parity). Runs on the install worker thread; failures are non-fatal.
+        Skipped for user-supplied archives (see _install_paths clear_archives)."""
         try:
+            if not getattr(self, "_install_clear_archives", True):
+                return
             from Utils.ui_config import (
                 load_clear_archive_after_install, load_keep_fomod_archives)
             if not load_clear_archive_after_install():
@@ -7236,7 +7247,8 @@ class MainWindow(QMainWindow):
         self._install_paths(b["paths"], metas=b["metas"],
                             previous_mod_name=b["previous_mod_name"],
                             preferred_names=b["preferred_names"],
-                            on_all_done=b["on_all_done"])
+                            on_all_done=b["on_all_done"],
+                            clear_archives=b.get("clear_archives", True))
 
     def _build_modlist(self) -> QWidget:
         self._modlist_model = ModListModel([])
@@ -9773,7 +9785,8 @@ class MainWindow(QMainWindow):
         # Page 4: the real Downloads view.
         from gui_qt.downloads_view import DownloadsView
         self._downloads_view = DownloadsView()
-        self._downloads_view.on_install = self._install_paths
+        self._downloads_view.on_install = \
+            lambda paths: self._install_paths(paths, clear_archives=False)
         self._downloads_view.selection_changed.connect(
             self._update_downloads_footer)
         self._plugin_stack.addWidget(self._downloads_view)
