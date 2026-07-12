@@ -31,8 +31,17 @@ from gui_qt.theme_qt import active_palette, _c
 from gui_qt.safe_emit import safe_emit
 from gui_qt.nexus_mod_card import ThumbnailLoader
 from gui_qt.collection_card import CollectionCard, CARD_W, IMG_W, IMG_H
+from gui_qt.selector_button import SelectorButton
 
 PAGE_SIZE = 20            # Tk parity (collections_dialog PAGE_SIZE)
+
+# label → API sort key (see NexusAPI.COLLECTION_SORTS)
+SORT_KEYS = [
+    ("Most downloaded", "downloads"),
+    ("Most endorsed", "endorsements"),
+    ("Highest rated", "rating"),
+    ("Recently listed", "recent"),
+]
 
 
 class CollectionsBrowserView(QWidget):
@@ -58,6 +67,7 @@ class CollectionsBrowserView(QWidget):
         # state
         self._page = 0
         self._query = ""
+        self._sort = "downloads"
         self._entries = []
         self._cards: list[CollectionCard] = []
         self._appended_cards: list[CollectionCard] = []
@@ -90,6 +100,13 @@ class CollectionsBrowserView(QWidget):
         title.setStyleSheet(f"color:{_c(p,'TEXT_MAIN')}; font-weight:600;")
         tb.addWidget(title)
         tb.addStretch(1)
+
+        self._sort_sel = SelectorButton(
+            items=[self.tr(lbl) for lbl, _ in SORT_KEYS],
+            current=self.tr("Most downloaded"),
+            prefix=self.tr("Sort: "), min_width=170,
+            on_select=self._on_sort_changed)
+        tb.addWidget(self._sort_sel)
 
         open_btn = QToolButton()
         open_btn.setText(self.tr("Open on Nexus"))
@@ -222,6 +239,18 @@ class CollectionsBrowserView(QWidget):
         self._page = 0
         self._reload()
 
+    # -- sort ---------------------------------------------------------------
+    def _on_sort_changed(self, label: str):
+        # Map the (possibly translated) menu label back to its API sort key.
+        key = next((k for lbl, k in SORT_KEYS if self.tr(lbl) == label), None)
+        if key is None:
+            key = dict(SORT_KEYS).get(label, "downloads")
+        if key == self._sort:
+            return
+        self._sort = key
+        self._page = 0
+        self._reload()
+
     # -- pagination ---------------------------------------------------------
     def _page_size(self) -> int:
         return PAGE_SIZE
@@ -273,6 +302,7 @@ class CollectionsBrowserView(QWidget):
         size = self._page_size()
         query = self._query
         domain = self._domain
+        sort = self._sort
 
         def worker():
             entries = []
@@ -280,13 +310,13 @@ class CollectionsBrowserView(QWidget):
             try:
                 if query:
                     entries = self._api.search_collections(
-                        domain, query, count=size, offset=page * size)
+                        domain, query, count=size, offset=page * size, sort=sort)
                     status = self.tr("Search '{0}': page {1} "
                                      "({2} result(s))").format(
                                          query, page + 1, len(entries))
                 else:
                     entries = self._api.get_collections(
-                        domain, count=size, offset=page * size)
+                        domain, count=size, offset=page * size, sort=sort)
                     status = self.tr("Collections: page {0}").format(page + 1)
                 if not entries and page == 0:
                     status = (self.tr("No collections found.")
@@ -312,7 +342,8 @@ class CollectionsBrowserView(QWidget):
         self._update_page_buttons()
 
     def _set_loading(self, on: bool):
-        for w in (self._prev_btn, self._next_btn, self._page_edit):
+        for w in (self._prev_btn, self._next_btn, self._page_edit,
+                  self._sort_sel):
             w.setEnabled(not on)
         if on:
             self._status.setText(self.tr("Loading…"))

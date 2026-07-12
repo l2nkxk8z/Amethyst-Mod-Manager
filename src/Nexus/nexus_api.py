@@ -2054,7 +2054,24 @@ class NexusAPI:
 
     # -- Collections (GraphQL v2) -------------------------------------------
 
-    _COLLECTIONS_QUERY = """
+    # Accepted sort keys → the collectionsV2 `sort` clause. These are baked into
+    # the GraphQL query text (field names cannot be passed as variables), so the
+    # mapping doubles as an allow-list — only these keys ever reach the query.
+    COLLECTION_SORTS = {
+        "downloads": "{ downloads: { direction: DESC } }",
+        "endorsements": "{ endorsements: { direction: DESC } }",
+        "rating": "{ rating: { direction: DESC } }",
+        "recent": "{ createdAt: { direction: DESC } }",
+    }
+    _DEFAULT_COLLECTION_SORT = "downloads"
+
+    def _collection_sort_clause(self, sort: str) -> str:
+        return self.COLLECTION_SORTS.get(
+            sort, self.COLLECTION_SORTS[self._DEFAULT_COLLECTION_SORT])
+
+    @staticmethod
+    def _collections_query(sort_clause: str) -> str:
+        return """
     query Collections(
         $gameDomain: String!
         $count: Int
@@ -2064,7 +2081,7 @@ class NexusAPI:
             filter: { gameDomain: [{ value: $gameDomain }] }
             count: $count
             offset: $offset
-            sort: [{ downloads: { direction: DESC } }]
+            sort: [%s]
         ) {
             nodes {
                 id
@@ -2080,7 +2097,7 @@ class NexusAPI:
             }
         }
     }
-    """
+    """ % sort_clause
 
     @staticmethod
     def _parse_collection_nodes(nodes: list, game_domain: str) -> list["NexusCollection"]:
@@ -2106,16 +2123,21 @@ class NexusAPI:
         return results
 
     def get_collections(
-        self, game_domain: str, count: int = 20, offset: int = 0
+        self, game_domain: str, count: int = 20, offset: int = 0,
+        sort: str = "downloads"
     ) -> list[NexusCollection]:
         """
-        Fetch collections for a game domain via GraphQL, sorted by most downloaded.
+        Fetch collections for a game domain via GraphQL.
+
+        *sort* is one of COLLECTION_SORTS (downloads / endorsements / rating /
+        recent); unknown values fall back to the most-downloaded default.
         """
         variables = {"gameDomain": game_domain, "count": count, "offset": offset}
+        query = self._collections_query(self._collection_sort_clause(sort))
         try:
             resp = self._session.post(
                 GRAPHQL_BASE,
-                json={"query": self._COLLECTIONS_QUERY, "variables": variables},
+                json={"query": query, "variables": variables},
                 timeout=self._timeout,
             )
             self._log_response("POST", "GraphQL get_collections", resp)
@@ -2136,7 +2158,9 @@ class NexusAPI:
             app_log(f"GraphQL get_collections error: {exc}")
             return []
 
-    _COLLECTIONS_SEARCH_QUERY = """
+    @staticmethod
+    def _collections_search_query(sort_clause: str) -> str:
+        return """
     query CollectionsSearch(
         $gameDomain: String!
         $query: String!
@@ -2150,7 +2174,7 @@ class NexusAPI:
             }
             count: $count
             offset: $offset
-            sort: [{ downloads: { direction: DESC } }]
+            sort: [%s]
         ) {
             nodes {
                 id
@@ -2166,10 +2190,11 @@ class NexusAPI:
             }
         }
     }
-    """
+    """ % sort_clause
 
     def search_collections(
-        self, game_domain: str, query: str, count: int = 20, offset: int = 0
+        self, game_domain: str, query: str, count: int = 20, offset: int = 0,
+        sort: str = "downloads"
     ) -> list[NexusCollection]:
         """
         Search collections for a game domain by name via the GraphQL
@@ -2180,6 +2205,8 @@ class NexusAPI:
         downloaded batch the way a client-side filter would be. Do NOT add
         `*`/`%` wildcard chars around the value — the WILDCARD operator already
         matches substrings, and supplying them makes it match nothing.
+
+        *sort* is one of COLLECTION_SORTS (see get_collections).
         """
         variables = {
             "gameDomain": game_domain,
@@ -2187,10 +2214,12 @@ class NexusAPI:
             "count": count,
             "offset": offset,
         }
+        query_text = self._collections_search_query(
+            self._collection_sort_clause(sort))
         try:
             resp = self._session.post(
                 GRAPHQL_BASE,
-                json={"query": self._COLLECTIONS_SEARCH_QUERY, "variables": variables},
+                json={"query": query_text, "variables": variables},
                 timeout=self._timeout,
             )
             self._log_response("POST", "GraphQL search_collections", resp)
