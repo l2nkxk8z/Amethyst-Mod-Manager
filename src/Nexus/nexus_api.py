@@ -2136,25 +2136,77 @@ class NexusAPI:
             app_log(f"GraphQL get_collections error: {exc}")
             return []
 
+    _COLLECTIONS_SEARCH_QUERY = """
+    query CollectionsSearch(
+        $gameDomain: String!
+        $query: String!
+        $count: Int
+        $offset: Int
+    ) {
+        collectionsV2(
+            filter: {
+                gameDomain: [{ value: $gameDomain }]
+                name: { value: $query, op: WILDCARD }
+            }
+            count: $count
+            offset: $offset
+            sort: [{ downloads: { direction: DESC } }]
+        ) {
+            nodes {
+                id
+                slug
+                name
+                summary
+                tileImage { url }
+                user { name }
+                game { domainName }
+                latestPublishedRevision { modCount }
+                totalDownloads
+                endorsements
+            }
+        }
+    }
+    """
+
     def search_collections(
         self, game_domain: str, query: str, count: int = 20, offset: int = 0
     ) -> list[NexusCollection]:
         """
-        Search collections for a game domain by fetching a large batch and
-        filtering client-side (case-insensitive substring match on name/summary).
+        Search collections for a game domain by name via the GraphQL
+        collectionsV2 `name` WILDCARD filter (case-insensitive substring match).
 
-        The Nexus GraphQL API does not expose a reliable partial-text search for
-        collections, so we over-fetch and filter locally.
+        The server-side filter searches the full catalogue and supports
+        count/offset pagination, so results are not limited to the most-
+        downloaded batch the way a client-side filter would be. Do NOT add
+        `*`/`%` wildcard chars around the value — the WILDCARD operator already
+        matches substrings, and supplying them makes it match nothing.
         """
-        _FETCH_BATCH = 200
-        q_lower = query.lower()
+        variables = {
+            "gameDomain": game_domain,
+            "query": query,
+            "count": count,
+            "offset": offset,
+        }
         try:
-            all_cols = self.get_collections(game_domain, count=_FETCH_BATCH, offset=0)
-            matched = [
-                c for c in all_cols
-                if q_lower in c.name.lower() or q_lower in c.summary.lower()
-            ]
-            return matched[offset: offset + count]
+            resp = self._session.post(
+                GRAPHQL_BASE,
+                json={"query": self._COLLECTIONS_SEARCH_QUERY, "variables": variables},
+                timeout=self._timeout,
+            )
+            self._log_response("POST", "GraphQL search_collections", resp)
+            if not resp.ok:
+                app_log(f"GraphQL search_collections failed: {resp.status_code}")
+                return []
+            data = resp.json()
+            if "errors" in data:
+                app_log(f"GraphQL search_collections errors: {data['errors']}")
+                return []
+            nodes = (
+                data.get("data", {})
+                .get("collectionsV2", {})
+                .get("nodes", [])
+            )
+            return self._parse_collection_nodes(nodes, game_domain)
         except Exception as exc:
             app_log(f"GraphQL search_collections error: {exc}")
             return []

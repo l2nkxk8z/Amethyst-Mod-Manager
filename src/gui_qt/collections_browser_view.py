@@ -322,10 +322,9 @@ class CollectionsBrowserView(QWidget):
 
     def _update_page_buttons(self):
         self._prev_btn.setEnabled(self._page > 0)
-        # Search over-fetches a single capped batch (no real server paging), so
-        # only paginate the unfiltered browse list.
-        self._next_btn.setEnabled(
-            (not self._query) and len(self._entries) >= self._page_size())
+        # Both browse and search page server-side via count/offset, so a full
+        # page implies there may be a next one.
+        self._next_btn.setEnabled(len(self._entries) >= self._page_size())
 
     # -- appended-collections section ----------------------------------------
     def refresh_appended(self):
