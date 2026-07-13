@@ -660,6 +660,18 @@ The md5 cache is preserved. Archives will be re-downloaded as needed.</translati
         <source>Install</source>
         <translation>Install</translation>
     </message>
+    <message>
+        <source>Waiting for the browser download of '{0}' — click Cancel to stop.</source>
+        <translation>Waiting for the browser download of '{0}' — click Cancel to stop.</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>Cancel</translation>
+    </message>
+    <message>
+        <source>Waiting for the browser download — {0} / {1}</source>
+        <translation>Waiting for the browser download — {0} / {1}</translation>
+    </message>
 </context>
 <context>
     <name>CollectionCard</name>
@@ -906,6 +918,10 @@ The md5 cache is preserved. Archives will be re-downloaded as needed.</translati
     <message>
         <source>Sort: </source>
         <translation>Sort: </translation>
+    </message>
+    <message>
+        <source>Show adult</source>
+        <translation>Show adult</translation>
     </message>
     <message>
         <source>Open on Nexus</source>
@@ -1869,6 +1885,17 @@ Close it when you are done, then click Done.</translation>
     </message>
 </context>
 <context>
+    <name>DatePickerOverlay</name>
+    <message>
+        <source>Cancel</source>
+        <translation>Cancel</translation>
+    </message>
+    <message>
+        <source>OK</source>
+        <translation>OK</translation>
+    </message>
+</context>
+<context>
     <name>DetachableTabWidget</name>
     <message>
         <source>Pin to Modlist Panel</source>
@@ -2504,6 +2531,22 @@ Proton prefix: click 'Install Java into prefix' once, then it runs automatically
     <message>
         <source>e.g. PROTON_ENABLE_WAYLAND=0 gamemoderun %command%</source>
         <translation>e.g. PROTON_ENABLE_WAYLAND=0 gamemoderun %command%</translation>
+    </message>
+    <message>
+        <source>Deploy on run</source>
+        <translation>Deploy on run</translation>
+    </message>
+    <message>
+        <source>Deploy the modlist before running this exe</source>
+        <translation>Deploy the modlist before running this exe</translation>
+    </message>
+    <message>
+        <source>Runs the same deploy as the Deploy button, then launches this exe once the deploy finishes.</source>
+        <translation>Runs the same deploy as the Deploy button, then launches this exe once the deploy finishes.</translation>
+    </message>
+    <message>
+        <source>Hide from dropdown</source>
+        <translation>Hide from dropdown</translation>
     </message>
     <message>
         <source>Remove EXE</source>
@@ -5799,6 +5842,10 @@ or an encrypted file when no keyring is available).</translation>
         <translation>☰ Categories</translation>
     </message>
     <message>
+        <source>Custom…</source>
+        <translation>Custom…</translation>
+    </message>
+    <message>
         <source>Show adult</source>
         <translation>Show adult</translation>
     </message>
@@ -5851,6 +5898,14 @@ or an encrypted file when no keyring is available).</translation>
         <translation>No categories</translation>
     </message>
     <message>
+        <source>Uploaded since…</source>
+        <translation>Uploaded since…</translation>
+    </message>
+    <message>
+        <source>Since {0}</source>
+        <translation>Since {0}</translation>
+    </message>
+    <message>
         <source>Search by author…</source>
         <translation>Search by author…</translation>
     </message>
@@ -5861,6 +5916,10 @@ or an encrypted file when no keyring is available).</translation>
     <message>
         <source>Open on Nexus</source>
         <translation>Open on Nexus</translation>
+    </message>
+    <message>
+        <source>Cancel download detection</source>
+        <translation>Cancel download detection</translation>
     </message>
     <message>
         <source>Install</source>
@@ -5875,6 +5934,10 @@ or an encrypted file when no keyring is available).</translation>
         <translation>Untrack</translation>
     </message>
     <message>
+        <source>Track Mod</source>
+        <translation>Track Mod</translation>
+    </message>
+    <message>
         <source>Abstain</source>
         <translation>Abstain</translation>
     </message>
@@ -5882,8 +5945,8 @@ or an encrypted file when no keyring is available).</translation>
 <context>
     <name>NexusFileChooser</name>
     <message>
-        <source>'{0}' has multiple main files.</source>
-        <translation>'{0}' has multiple main files.</translation>
+        <source>'{0}' has multiple files.</source>
+        <translation>'{0}' has multiple files.</translation>
     </message>
     <message>
         <source>Select which file to install:</source>
@@ -5896,6 +5959,10 @@ or an encrypted file when no keyring is available).</translation>
     <message>
         <source>Install</source>
         <translation>Install</translation>
+    </message>
+    <message>
+        <source>No description provided.</source>
+        <translation>No description provided.</translation>
     </message>
 </context>
 <context>
@@ -5936,6 +6003,10 @@ Daily: {1}</translation>
     <message>
         <source>View</source>
         <translation>View</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>Cancel</translation>
     </message>
     <message>
         <source>Reinstall</source>
@@ -7973,6 +8044,26 @@ Merge your conflicts, then close it and click Done.</translation>
         <translation>Extractions are gated by available memory; the effective number may be lower than set.</translation>
     </message>
     <message>
+        <source>Extraction CPU threads</source>
+        <translation>Extraction CPU threads</translation>
+    </message>
+    <message>
+        <source>All</source>
+        <translation>All</translation>
+    </message>
+    <message>
+        <source>CPU threads each extraction may use. 'All' is fastest; a lower value keeps the system responsive while large archives extract.</source>
+        <translation>CPU threads each extraction may use. 'All' is fastest; a lower value keeps the system responsive while large archives extract.</translation>
+    </message>
+    <message>
+        <source>Low priority extractions</source>
+        <translation>Low priority extractions</translation>
+    </message>
+    <message>
+        <source>Run extractions at low CPU and disk priority so they yield to other applications instead of slowing them down. Extraction speed is unaffected while the system is otherwise idle.</source>
+        <translation>Run extractions at low CPU and disk priority so they yield to other applications instead of slowing them down. Extraction speed is unaffected while the system is otherwise idle.</translation>
+    </message>
+    <message>
         <source>Caches</source>
         <translation>Caches</translation>
     </message>
@@ -9700,6 +9791,269 @@ or use Browse to select it manually.</translation>
     <message>
         <source>Delete the custom theme "{0}"? This cannot be undone.</source>
         <translation>Delete the custom theme "{0}"? This cannot be undone.</translation>
+    </message>
+</context>
+<context>
+    <name>ThemePreviewPanel</name>
+    <message>
+        <source>Preview — approximate; use "Restart to apply" to see the theme across the whole app.</source>
+        <translation>Preview — approximate; use "Restart to apply" to see the theme across the whole app.</translation>
+    </message>
+    <message>
+        <source>Header &amp; tabs</source>
+        <translation>Header &amp; tabs</translation>
+    </message>
+    <message>
+        <source>Profiles</source>
+        <translation>Profiles</translation>
+    </message>
+    <message>
+        <source>Refresh</source>
+        <translation>Refresh</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation>Save</translation>
+    </message>
+    <message>
+        <source>▶ Play</source>
+        <translation>▶ Play</translation>
+    </message>
+    <message>
+        <source>Mods</source>
+        <translation>Mods</translation>
+    </message>
+    <message>
+        <source>Plugins</source>
+        <translation>Plugins</translation>
+    </message>
+    <message>
+        <source>Data</source>
+        <translation>Data</translation>
+    </message>
+    <message>
+        <source>Mod list</source>
+        <translation>Mod list</translation>
+    </message>
+    <message>
+        <source>Mod name</source>
+        <translation>Mod name</translation>
+    </message>
+    <message>
+        <source>Notes</source>
+        <translation>Notes</translation>
+    </message>
+    <message>
+        <source>Overwrite</source>
+        <translation>Overwrite</translation>
+    </message>
+    <message>
+        <source>Root Folder</source>
+        <translation>Root Folder</translation>
+    </message>
+    <message>
+        <source>— Gameplay —</source>
+        <translation>— Gameplay —</translation>
+    </message>
+    <message>
+        <source>Unofficial Patch</source>
+        <translation>Unofficial Patch</translation>
+    </message>
+    <message>
+        <source>Selected mod</source>
+        <translation>Selected mod</translation>
+    </message>
+    <message>
+        <source>Wins over selection</source>
+        <translation>Wins over selection</translation>
+    </message>
+    <message>
+        <source>conflict</source>
+        <translation>conflict</translation>
+    </message>
+    <message>
+        <source>Loses to selection</source>
+        <translation>Loses to selection</translation>
+    </message>
+    <message>
+        <source>Plugin's mod</source>
+        <translation>Plugin's mod</translation>
+    </message>
+    <message>
+        <source>anchor</source>
+        <translation>anchor</translation>
+    </message>
+    <message>
+        <source>Textures folder</source>
+        <translation>Textures folder</translation>
+    </message>
+    <message>
+        <source>Archive.bsa</source>
+        <translation>Archive.bsa</translation>
+    </message>
+    <message>
+        <source>Profile.ini</source>
+        <translation>Profile.ini</translation>
+    </message>
+    <message>
+        <source>Installed</source>
+        <translation>Installed</translation>
+    </message>
+    <message>
+        <source>Unordered plugin</source>
+        <translation>Unordered plugin</translation>
+    </message>
+    <message>
+        <source>Plugins &amp; files</source>
+        <translation>Plugins &amp; files</translation>
+    </message>
+    <message>
+        <source>✔  SKSE Installed</source>
+        <translation>✔  SKSE Installed</translation>
+    </message>
+    <message>
+        <source>●  SKSE present in modlist but not deployed</source>
+        <translation>●  SKSE present in modlist but not deployed</translation>
+    </message>
+    <message>
+        <source>●  SKSE present in modlist but not enabled</source>
+        <translation>●  SKSE present in modlist but not enabled</translation>
+    </message>
+    <message>
+        <source>✘  SKSE Not Present</source>
+        <translation>✘  SKSE Not Present</translation>
+    </message>
+    <message>
+        <source>Cycle detected among pinned plugins</source>
+        <translation>Cycle detected among pinned plugins</translation>
+    </message>
+    <message>
+        <source>Cycle resolved</source>
+        <translation>Cycle resolved</translation>
+    </message>
+    <message>
+        <source>Flipping this rule resolves the cycle</source>
+        <translation>Flipping this rule resolves the cycle</translation>
+    </message>
+    <message>
+        <source>load before</source>
+        <translation>load before</translation>
+    </message>
+    <message>
+        <source>load after</source>
+        <translation>load after</translation>
+    </message>
+    <message>
+        <source>winning file</source>
+        <translation>winning file</translation>
+    </message>
+    <message>
+        <source>overridden file</source>
+        <translation>overridden file</translation>
+    </message>
+    <message>
+        <source>inactive file</source>
+        <translation>inactive file</translation>
+    </message>
+    <message>
+        <source>anchor file</source>
+        <translation>anchor file</translation>
+    </message>
+    <message>
+        <source>Drag selection outline</source>
+        <translation>Drag selection outline</translation>
+    </message>
+    <message>
+        <source>Buttons</source>
+        <translation>Buttons</translation>
+    </message>
+    <message>
+        <source>Hover a button to preview its hover colour.</source>
+        <translation>Hover a button to preview its hover colour.</translation>
+    </message>
+    <message>
+        <source>Inputs &amp; scrollbar</source>
+        <translation>Inputs &amp; scrollbar</translation>
+    </message>
+    <message>
+        <source>Search…</source>
+        <translation>Search…</translation>
+    </message>
+    <message>
+        <source>Default profile</source>
+        <translation>Default profile</translation>
+    </message>
+    <message>
+        <source>Testing</source>
+        <translation>Testing</translation>
+    </message>
+    <message>
+        <source>Enabled</source>
+        <translation>Enabled</translation>
+    </message>
+    <message>
+        <source>Disabled</source>
+        <translation>Disabled</translation>
+    </message>
+    <message>
+        <source>Selected option</source>
+        <translation>Selected option</translation>
+    </message>
+    <message>
+        <source>List row {0}</source>
+        <translation>List row {0}</translation>
+    </message>
+    <message>
+        <source>Cards, toasts &amp; progress</source>
+        <translation>Cards, toasts &amp; progress</translation>
+    </message>
+    <message>
+        <source>Card title</source>
+        <translation>Card title</translation>
+    </message>
+    <message>
+        <source>Card detail text</source>
+        <translation>Card detail text</translation>
+    </message>
+    <message>
+        <source>Card secondary text</source>
+        <translation>Card secondary text</translation>
+    </message>
+    <message>
+        <source>Info</source>
+        <translation>Info</translation>
+    </message>
+    <message>
+        <source>Success</source>
+        <translation>Success</translation>
+    </message>
+    <message>
+        <source>Warning</source>
+        <translation>Warning</translation>
+    </message>
+    <message>
+        <source>Error</source>
+        <translation>Error</translation>
+    </message>
+    <message>
+        <source>Required mod</source>
+        <translation>Required mod</translation>
+    </message>
+    <message>
+        <source>Optional mod</source>
+        <translation>Optional mod</translation>
+    </message>
+    <message>
+        <source>Status badges</source>
+        <translation>Status badges</translation>
+    </message>
+    <message>
+        <source>Deployed</source>
+        <translation>Deployed</translation>
+    </message>
+    <message>
+        <source>Text &amp; tones</source>
+        <translation>Text &amp; tones</translation>
     </message>
 </context>
 <context>
