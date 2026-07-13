@@ -543,6 +543,30 @@ class SettingsView(QWidget):
             g, self.tr("Extractions are gated by available memory; the effective number "
                "may be lower than set."))
 
+        # Extraction resource limits — apply to every install (single mods,
+        # Downloads tab and collections), not just collection installs.
+        import os as _os
+        ext = uc.load_extraction_settings()
+        thr_sld, thr_lbl = self._slider(
+            g, self.tr("Extraction CPU threads"), 0, _os.cpu_count() or 8,
+            int(ext.get("cpu_threads", 0)),
+            lambda v: self._safe_save(uc.save_extraction_cpu_threads, v))
+        def _fmt_threads(v, _lbl=thr_lbl):
+            _lbl.setText(self.tr("All") if int(v) == 0 else str(v))
+        thr_sld.valueChanged.connect(_fmt_threads)
+        _fmt_threads(thr_sld.value())
+        self._add_help(
+            g, self.tr("CPU threads each extraction may use. 'All' is fastest; a "
+               "lower value keeps the system responsive while large archives "
+               "extract."))
+        self._checkbox(
+            g, self.tr("Low priority extractions"),
+            lambda: bool(uc.load_extraction_settings().get("low_priority", False)),
+            uc.save_extraction_low_priority,
+            help=self.tr("Run extractions at low CPU and disk priority so they yield "
+                 "to other applications instead of slowing them down. Extraction "
+                 "speed is unaffected while the system is otherwise idle."))
+
         # Manage Caches action.
         row = self._next_row(g)
         g.addWidget(QLabel(self.tr("Caches")), row, 0)

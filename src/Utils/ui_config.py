@@ -762,6 +762,68 @@ def save_collection_settings(max_concurrent: int,
 
 
 # ---------------------------------------------------------------------------
+# Extraction resource limits
+# ---------------------------------------------------------------------------
+# Applies to EVERY archive extraction (single installs, Downloads tab and
+# collection installs) — unlike [collections] max_extract_workers, which only
+# caps how many extractions run at once during a collection install.
+_EXTRACTION_SECTION = "extraction"
+
+# 0 = no cap (7z -mmt=on, all cores). Clamp guards a hand-edited INI.
+_EXTRACTION_THREADS_CEILING = 128
+
+
+def load_extraction_settings() -> dict:
+    """Return extraction resource settings with keys:
+
+    * ``cpu_threads`` — int; max CPU threads per extractor process
+      (0 = use all cores).
+    * ``low_priority`` — bool; run extractor processes at low CPU + disk
+      priority so foreground applications stay responsive.
+    """
+    path = get_ui_config_path()
+    defaults = {"cpu_threads": 0, "low_priority": False}
+    if not path.is_file():
+        return defaults
+    try:
+        parser = _new_parser()
+        parser.read(path)
+        if not parser.has_section(_EXTRACTION_SECTION):
+            return defaults
+        s = parser[_EXTRACTION_SECTION]
+        cpu_threads = int(s.get("cpu_threads", "0"))
+        cpu_threads = max(0, min(_EXTRACTION_THREADS_CEILING, cpu_threads))
+        low_priority = s.getboolean("low_priority", False)
+        return {"cpu_threads": cpu_threads, "low_priority": low_priority}
+    except Exception:
+        return defaults
+
+
+def _save_extraction_option(key: str, value: str) -> None:
+    path = get_ui_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    parser = _new_parser()
+    if path.is_file():
+        parser.read(path)
+    if _EXTRACTION_SECTION not in parser:
+        parser[_EXTRACTION_SECTION] = {}
+    parser[_EXTRACTION_SECTION][key] = value
+    with path.open("w", encoding="utf-8") as f:
+        parser.write(f)
+
+
+def save_extraction_cpu_threads(threads: int) -> None:
+    """Persist the per-extraction CPU thread cap (0 = use all cores)."""
+    threads = max(0, min(_EXTRACTION_THREADS_CEILING, int(threads)))
+    _save_extraction_option("cpu_threads", str(threads))
+
+
+def save_extraction_low_priority(value: bool) -> None:
+    """Persist whether extractor processes run at low CPU/disk priority."""
+    _save_extraction_option("low_priority", "true" if value else "false")
+
+
+# ---------------------------------------------------------------------------
 # Nexus browser settings
 # ---------------------------------------------------------------------------
 _NEXUS_SECTION = "nexus"

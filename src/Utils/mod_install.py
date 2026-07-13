@@ -711,12 +711,24 @@ def _extract_archive(archive_path: str, dest_dir: str, log_fn: LogFn,
     if _cancelled():
         return False
 
+    # Extraction resource limits (Settings ▸ Downloads & Collections). Read per
+    # archive so a settings change applies to the next extraction without a
+    # restart — the INI parse is trivial next to the extractor spawn it gates.
+    try:
+        from Utils.ui_config import load_extraction_settings
+        _limits = load_extraction_settings()
+    except Exception:
+        _limits = {}
+    _threads = int(_limits.get("cpu_threads", 0) or 0)
+    _low_prio = bool(_limits.get("low_priority", False))
+    _mmt = f"-mmt={_threads}" if _threads > 0 else "-mmt=on"
+
     _7z = (shutil.which("7zzs") or shutil.which("7zz")
            or shutil.which("7z") or shutil.which("7za"))
     if _7z:
         rc, err, killed = _run_extractor_cancellable(
-            [_7z, "x", archive_path, f"-o{dest_dir}", "-y", "-mmt=on", "-bsp1"],
-            cancel, progress_cb=progress_cb)
+            [_7z, "x", archive_path, f"-o{dest_dir}", "-y", _mmt, "-bsp1"],
+            cancel, progress_cb=progress_cb, low_priority=_low_prio)
         if killed:
             log_fn("Extraction cancelled (7z terminated).")
             return False
@@ -729,7 +741,8 @@ def _extract_archive(archive_path: str, dest_dir: str, log_fn: LogFn,
         return False
     if shutil.which("bsdtar"):
         rc, err, killed = _run_extractor_cancellable(
-            ["bsdtar", "-xf", archive_path, "-C", dest_dir], cancel)
+            ["bsdtar", "-xf", archive_path, "-C", dest_dir], cancel,
+            low_priority=_low_prio)
         if killed:
             log_fn("Extraction cancelled (bsdtar terminated).")
             return False
@@ -777,7 +790,8 @@ def _extract_archive(archive_path: str, dest_dir: str, log_fn: LogFn,
 
 
 def _run_extractor_cancellable(cmd: list, cancel,
-                               progress_cb=None) -> "tuple[int, str, bool]":
+                               progress_cb=None,
+                               low_priority=False) -> "tuple[int, str, bool]":
     """Run *cmd* (7z/bsdtar), polling *cancel* so a pause/cancel kills the
     extractor promptly instead of waiting for it to finish. Returns
     ``(returncode, stderr, killed)`` — *killed* is True if we terminated it on a
@@ -788,11 +802,27 @@ def _run_extractor_cancellable(cmd: list, cancel,
     progress line in place with backspaces rather than newlines, so the scan is
     a regex over raw chunks, not line reads. Both pipes are drained on
     background threads — waiting for the process first and reading after would
-    deadlock once a pipe buffer fills."""
+    deadlock once a pipe buffer fills.
+
+    *low_priority* — run the extractor at low CPU and disk priority so it
+    yields to foreground applications. CPU niceness is set post-spawn with
+    ``os.setpriority`` (a ``preexec_fn`` is unsafe in this heavily-threaded
+    process); disk priority via an ``ionice`` prefix when available — ionice
+    exec()s the target without forking, so the PID (and thus terminate/renice)
+    still reaches the extractor itself."""
+    if low_priority and shutil.which("ionice"):
+        # best-effort class 2 (lowest level) rather than idle class 3, which
+        # can starve the extraction outright under sustained foreground I/O
+        cmd = ["ionice", "-c2", "-n7"] + list(cmd)
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE if progress_cb is not None else subprocess.DEVNULL,
         stderr=subprocess.PIPE)
+    if low_priority:
+        try:
+            os.setpriority(os.PRIO_PROCESS, proc.pid, 19)
+        except (OSError, AttributeError):
+            pass
     err_parts: "list[bytes]" = []
 
     def _drain_stderr():
