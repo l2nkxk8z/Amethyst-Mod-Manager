@@ -572,6 +572,12 @@ class MainWindow(QMainWindow):
         if not load_onboarding_complete() or configured == 0:
             QTimer.singleShot(0, self._open_onboarding_tab)
 
+        # Warn if any game handler failed to load. A broken handler used to make
+        # its game silently vanish from the list, which users mistook for the
+        # game (and its mods) being deleted — mods actually live untouched in
+        # ~/.config and Profiles/. Deferred so the log panel is live first.
+        QTimer.singleShot(0, self._warn_handler_load_failures)
+
         # Splash watchdog: the splash is normally dismissed by the first
         # _on_conflicts_ready, but a game with no profile / empty modlist may
         # never trigger a conflict rebuild. Close it unconditionally after a
@@ -597,6 +603,30 @@ class MainWindow(QMainWindow):
                 pass
         self.raise_()
         self.activateWindow()
+
+    def _warn_handler_load_failures(self):
+        """If any game handler failed to load during discovery, log each one and
+        show a single toast. Without this a broken handler just removes its game
+        from the list with no trace, which reads as "my game/mods got deleted"
+        (mods are safe — they live in ~/.config and Profiles/, untouched)."""
+        try:
+            from Utils.game_loader import get_load_failures
+            failures = get_load_failures()
+        except Exception:
+            return
+        if not failures:
+            return
+        for rel, reason in failures:
+            self._append_log(f"[game] handler failed to load: {rel} — {reason}")
+        n = len(failures)
+        first = failures[0][0]
+        detail = first if n == 1 else self.tr("{0} and {1} more").format(first, n - 1)
+        self._notify(
+            self.tr("A game handler failed to load ({0}). Affected games are "
+                    "hidden, but your mods are safe — see the log.").format(detail),
+            state="warning",
+            sticky=True,
+        )
 
     def _populate_selectors(self):
         """Fill the game/profile selectors from the current GameState."""
