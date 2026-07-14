@@ -1882,6 +1882,22 @@ class MainWindow(QMainWindow):
             with perftrace.span("switch.refresh_play_selector"):
                 self._refresh_play_selector()
             self._clear_search_boxes()
+            # Non-specific profiles share the mods folder: a mod added while
+            # another profile was active is on disk but absent from this
+            # profile's modlist.txt. Sync the file against the folder so the
+            # new mod shows up on switch without a manual Refresh. This is
+            # cheap (one iterdir + modlist.txt diff) and does NOT rescan the
+            # shared index/filemap, which is unchanged across the switch.
+            with perftrace.span("switch.sync_modlist_folder"):
+                try:
+                    from Utils.modlist import sync_modlist_with_mods_folder
+                    ml = self._gs.modlist_path()
+                    staging = self._gs.staging_dir()
+                    if ml is not None and staging is not None:
+                        sync_modlist_with_mods_folder(ml, staging)
+                except Exception as exc:
+                    print(f"[gui_qt] profile-switch modlist sync failed: {exc}",
+                          flush=True)
             with perftrace.span("switch.reload_modlist(sync)"):
                 self._reload_modlist()
             with perftrace.span("switch.reload_plugins(kickoff)"):
