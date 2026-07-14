@@ -2185,7 +2185,7 @@ def _apply_collection_ini_tweaks(archive_root, profile_dir, game, log):
     if not (archive_root / "INI Tweaks").is_dir():
         return
     try:
-        from Games.Bethesda.Bethesda import _read_ini_key, _set_ini_key
+        from Games.Bethesda.bethesda_ini import _read_ini_key, _set_ini_key
     except Exception as exc:
         log(f"Collection INI tweaks: INI helpers unavailable ({exc}) — skipped")
         return
