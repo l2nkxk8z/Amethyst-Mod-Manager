@@ -214,6 +214,9 @@ class MainWindow(QMainWindow):
     _install_done = Signal(int, int, object)   # (ok_count, total, names-list)
     _prepared_ready = Signal(object)           # (PreparedInstall|None)
     _one_install_done = Signal(object)         # (installed name|None)
+    # Parallel phase of a multi-archive install finished → UI thread starts the
+    # deferred FOMOD/BAIN phase. (installed-names list, deferred-paths list)
+    _install_batch_stage_done = Signal(object, object)
     # Worker asks the UI to show the Set-Prefix overlay; payload carries a
     # result holder + threading.Event the worker blocks on.
     _need_prefix = Signal(object)              # (dict with required/file_list/...)
@@ -360,6 +363,7 @@ class MainWindow(QMainWindow):
         self._install_done.connect(self._on_install_done)
         self._prepared_ready.connect(self._on_prepared_ready)
         self._one_install_done.connect(self._on_one_install_done)
+        self._install_batch_stage_done.connect(self._on_install_batch_stage_done)
         self._need_prefix.connect(self._on_need_prefix_ui)
         self._mod_exists.connect(self._on_mod_exists_ui)
         self._confirm_cet.connect(self._on_confirm_cet_ui)
@@ -7813,7 +7817,14 @@ class MainWindow(QMainWindow):
         self._install_clear_archives = clear_archives
         self._notify(self.tr("Installing {0} mod(s)…").format(len(paths)) if len(paths) > 1
                      else self.tr("Installing {0}…").format(Path(paths[0]).name), "info")
-        self._install_next()
+        # Multi-archive batch (Downloads tab multi-select, Nexus batches):
+        # extract several archives at once like a collection install, deferring
+        # FOMOD/BAIN wizards to a sequential phase at the end. Change Version
+        # (previous_mod_name) is always a single archive; keep it sequential.
+        if len(paths) > 1 and previous_mod_name is None:
+            self._install_batch_parallel()
+        else:
+            self._install_next()
 
     def _make_need_prefix_cb(self):
         """Return an on_need_prefix(required, file_list, mod_name) callback for the
@@ -7965,6 +7976,159 @@ class MainWindow(QMainWindow):
             self._prepared_ready.emit(prepared)
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _install_batch_parallel(self):
+        """Phase 1 of a multi-archive install: prepare + install every
+        NON-interactive archive on a small worker pool (collection-install
+        style: max_extract_workers threads gated by the extraction memory
+        budget). Archives that need a wizard (FOMOD with steps, BAIN) are
+        deferred; _on_install_batch_stage_done then runs them one-by-one
+        through the existing sequential wizard handshake. Blocking UI prompts
+        (need-prefix, mod-already-exists) are serialised so only one overlay
+        shows at a time."""
+        import threading
+
+        paths = list(self._install_queue)
+        self._install_queue = []
+        total = self._install_total
+        ui_lock = threading.Lock()
+        raw_prefix_cb = self._make_need_prefix_cb()
+        raw_exists_cb = self._make_exists_cb()
+
+        def _serialized(cb):
+            def inner(*a, **k):
+                with ui_lock:
+                    return cb(*a, **k)
+            return inner
+
+        prefix_cb = _serialized(raw_prefix_cb)
+        exists_cb = _serialized(raw_exists_cb)
+
+        def driver():
+            from concurrent.futures import ThreadPoolExecutor
+            from Utils.mod_install import (prepare_archive, finish_install,
+                                           _archive_lists_fomod_config)
+            from Utils.extract_budget import (ExtractionMemoryBudget,
+                                              get_uncompressed_size)
+            try:
+                from Utils.ui_config import load_collection_settings
+                workers = int(load_collection_settings().get(
+                    "max_extract_workers", 4))
+            except Exception:
+                workers = 4
+            workers = max(1, min(workers, len(paths)))
+            budget = ExtractionMemoryBudget(max_workers=workers)
+            lock = threading.Lock()
+            ok_names: list = []
+            deferred: list = []
+            counters = {"done": 0}
+
+            def one(path):
+                name_for_log = Path(path).name
+                meta = self._install_metas.get(path)
+                forced = self._install_preferred.get(path, "")
+                est = 0
+                acquired = False
+                try:
+                    self._op_log.emit(f"Installing: {name_for_log}")
+                    # Archive listing already shows fomod/ModuleConfig.xml →
+                    # defer NOW, skipping an extract that would be thrown away
+                    # and repeated in the deferred phase (collection parity).
+                    if _archive_lists_fomod_config(path):
+                        self._op_log.emit(
+                            f"FOMOD installer detected: {name_for_log} — "
+                            "deferred to the end of the batch.")
+                        with lock:
+                            deferred.append(path)
+                        return
+                    est = get_uncompressed_size(path)
+                    budget.acquire(est)
+                    acquired = True
+                    prepared = prepare_archive(
+                        path, self._install_game, self._install_profile_dir,
+                        log_fn=lambda m: self._op_log.emit(str(m)),
+                        prebuilt_meta=meta, preferred_name=forced,
+                        on_need_prefix=prefix_cb)
+                    if prepared is None:
+                        return
+                    if (prepared.is_fomod() and prepared.fomod_has_steps()) \
+                            or prepared.is_bain():
+                        kind = "FOMOD" if prepared.is_fomod() else "BAIN"
+                        self._op_log.emit(
+                            f"{kind} installer detected: {prepared.mod_name} "
+                            "— deferred to the end of the batch.")
+                        prepared.cleanup()
+                        with lock:
+                            deferred.append(path)
+                        return
+                    if prepared.is_fomod():
+                        # FOMOD with no install steps → nothing to choose;
+                        # install headlessly (parity with _on_prepared_ready).
+                        self._op_log.emit(
+                            f"FOMOD has no install options: "
+                            f"{prepared.mod_name} — installing required files.")
+                    name = finish_install(
+                        prepared, None,
+                        log_fn=lambda m: self._op_log.emit(str(m)),
+                        on_exists=None if forced else exists_cb)
+                    if name:
+                        self._maybe_clear_archive(prepared)
+                        with lock:
+                            ok_names.append(name)
+                except Exception as exc:
+                    self._op_log.emit(f"Install error ({name_for_log}): {exc}")
+                finally:
+                    if acquired:
+                        budget.release(est)
+                    with lock:
+                        counters["done"] += 1
+                        done = counters["done"]
+                    self._op_progress.emit(done, total, "Installing")
+
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                list(ex.map(one, paths))
+            self._install_batch_stage_done.emit(ok_names, deferred)
+
+        threading.Thread(target=driver, daemon=True).start()
+
+    def _on_install_batch_stage_done(self, names, deferred):
+        """UI thread: the parallel phase of a batch install finished. Run the
+        optional rename-after-install prompts for the phase-1 installs (one at
+        a time, as the sequential path does), then push the deferred FOMOD/BAIN
+        archives through the normal sequential queue — an empty deferred list
+        goes straight to the batch summary via _install_next."""
+        names = list(names or [])
+        deferred = list(deferred or [])
+
+        def _proceed():
+            if deferred:
+                self._op_log.emit(
+                    f"Installing {len(deferred)} deferred FOMOD/BAIN mod(s)…")
+            self._install_queue = deferred
+            self._install_next()
+
+        try:
+            from Utils.ui_config import load_rename_mod_after_install
+            rename_on = load_rename_mod_after_install()
+        except Exception:
+            rename_on = False
+        if not rename_on:
+            self._install_ok.extend(names)
+            _proceed()
+            return
+
+        def _chain(i):
+            if i >= len(names):
+                _proceed()
+                return
+
+            def _named(final, _next=i + 1):
+                self._install_ok.append(final)
+                _chain(_next)
+
+            self._maybe_prompt_rename(names[i], _named)
+
+        _chain(0)
 
     def _on_prepared_ready(self, prepared):
         if prepared is None:

@@ -40,6 +40,12 @@ ProgressFn = Callable[[int, int, Optional[str]], None]
 FOMOD_DEFERRED = "__FOMOD_DEFERRED__"
 BAIN_DEFERRED = "__BAIN_DEFERRED__"
 
+# Serialises the per-profile "commit" writes (modindex.bin, modlist.txt,
+# plugins.txt) — read-modify-write files that concurrent install workers
+# (parallel batch installs, collection install consumers) would otherwise
+# race, silently dropping entries.
+_commit_lock = threading.Lock()
+
 
 # ---- case-insensitive copy core (moved from gui/install_mod.py, shared) ------
 # These resolve FOMOD/archive paths case-insensitively against the real (case-
@@ -1438,10 +1444,11 @@ def finish_install(prepared: "PreparedInstall", fomod_selections, *,
         _persist_bain_selection(p.game, p.mod_name, {"selected": bain_selected},
                                 profile_dir=p.profile_dir)
     _pp(0, 0, "Indexing")
-    _update_indexes(p.game, p.profile_dir, p.mod_name, dest_root, log_fn)
-    _add_to_modlist(p.profile_dir, p.mod_name, log_fn,
-                    preserve_position=getattr(p, "_preserve_position", False))
-    _add_plugins(p.game, p.profile_dir, dest_root, log_fn)
+    with _commit_lock:
+        _update_indexes(p.game, p.profile_dir, p.mod_name, dest_root, log_fn)
+        _add_to_modlist(p.profile_dir, p.mod_name, log_fn,
+                        preserve_position=getattr(p, "_preserve_position", False))
+        _add_plugins(p.game, p.profile_dir, dest_root, log_fn)
     # Stamp missing-requirements + endorsed flags now (one GraphQL call, no
     # rate-limit cost) so the modlist flags appear immediately without pressing
     # "Check updates".
@@ -1870,11 +1877,12 @@ def install_collection_archive(
     _write_install_meta(dest_root, archive, game, log_fn,
                         prebuilt_meta=prebuilt_meta, endorsed=_preserved_endorsed,
                         is_fomod=is_fomod_install)
-    if not skip_index_update:
-        _pp(0, 0, "Indexing")
-        _update_indexes(game, profile_dir, prepared.mod_name, dest_root, log_fn)
-    _add_to_modlist(profile_dir, prepared.mod_name, log_fn, preserve_position=False)
-    _add_plugins(game, profile_dir, dest_root, log_fn)
+    with _commit_lock:
+        if not skip_index_update:
+            _pp(0, 0, "Indexing")
+            _update_indexes(game, profile_dir, prepared.mod_name, dest_root, log_fn)
+        _add_to_modlist(profile_dir, prepared.mod_name, log_fn, preserve_position=False)
+        _add_plugins(game, profile_dir, dest_root, log_fn)
     log_fn(f"Installed '{prepared.mod_name}'.")
     _fire_on_installed(on_installed, is_fomod_install)
     return prepared.mod_name
@@ -2266,9 +2274,10 @@ def _install_multi_mod(p: "PreparedInstall", log_fn: LogFn, _pp) -> str | None:
             _copy_file_list(file_list, m_path, m_dest, log_fn)
             _write_install_meta(m_dest, p.archive, p.game, log_fn,
                                 prebuilt_meta=getattr(p, "prebuilt_meta", None))
-            _update_indexes(p.game, p.profile_dir, m_name, m_dest, log_fn)
-            _add_to_modlist(p.profile_dir, m_name, log_fn)
-            _add_plugins(p.game, p.profile_dir, m_dest, log_fn)
+            with _commit_lock:
+                _update_indexes(p.game, p.profile_dir, m_name, m_dest, log_fn)
+                _add_to_modlist(p.profile_dir, m_name, log_fn)
+                _add_plugins(p.game, p.profile_dir, m_dest, log_fn)
             log_fn(f"  Installed '{m_name}' → {m_dest}")
             installed.append(m_name)
     finally:
