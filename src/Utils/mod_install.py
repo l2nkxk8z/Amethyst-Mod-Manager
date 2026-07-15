@@ -1430,6 +1430,7 @@ def finish_install(prepared: "PreparedInstall", fomod_selections, *,
                         prebuilt_meta=getattr(p, "prebuilt_meta", None),
                         endorsed=getattr(p, "_preserved_endorsed", False),
                         ignored_reqs=getattr(p, "_preserved_ignored_reqs", ""),
+                        is_fomod=p.is_fomod(),
                         is_bain=bain_selected is not None)
     # Persist the BAIN sub-package selection (global + profile) so a re-install
     # restores the user's choices (Tk parity).
@@ -1867,7 +1868,8 @@ def install_collection_archive(
         return None
 
     _write_install_meta(dest_root, archive, game, log_fn,
-                        prebuilt_meta=prebuilt_meta, endorsed=_preserved_endorsed)
+                        prebuilt_meta=prebuilt_meta, endorsed=_preserved_endorsed,
+                        is_fomod=is_fomod_install)
     if not skip_index_update:
         _pp(0, 0, "Indexing")
         _update_indexes(game, profile_dir, prepared.mod_name, dest_root, log_fn)
@@ -2298,6 +2300,7 @@ def _build_nexus_api():
 def _write_install_meta(dest_root: Path, archive: Path, game, log_fn: LogFn,
                         prebuilt_meta=None, endorsed: bool = False,
                         ignored_reqs: str = "",
+                        is_fomod: bool = False,
                         is_bain: bool = False) -> None:
     try:
         from Nexus.nexus_meta import (
@@ -2338,8 +2341,10 @@ def _write_install_meta(dest_root: Path, archive: Path, game, log_fn: LogFn,
         # ignored requirements survive a reinstall/update.
         if ignored_reqs and not getattr(meta, "ignored_requirements", ""):
             meta.ignored_requirements = ignored_reqs
-        # Stamp the BAIN install-method flag so the modlist BAIN filter / is_bain
-        # set picks it up (Tk parity).
+        # Stamp the FOMOD / BAIN install-method flags so the modlist FOMOD/BAIN
+        # filters (and is_fomod / is_bain sets) pick them up (Tk parity).
+        if is_fomod:
+            meta.is_fomod = True
         if is_bain:
             meta.is_bain = True
         write_meta(meta_path, meta)
