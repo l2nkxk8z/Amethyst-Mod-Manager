@@ -122,8 +122,85 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # anylinux-setup-action downloads three helper scripts from
+      # raw.githubusercontent.com using `wget --retry-connrefused`, which does
+      # NOT retry on HTTP errors — a transient 429 (Too Many Requests) from
+      # GitHub's raw host aborts the whole build. Its URLs are env-overridable
+      # but its downloader is wget, which rejects file:// URLs ("Unsupported
+      # scheme"), so we can't point it at local copies. Instead: fetch the
+      # scripts here with a real 429-aware retry loop, install them into
+      # /usr/local/bin ourselves, and inline the action's remaining setup
+      # (keyring + pacman packages) in the next step.
+      - name: Pre-fetch anylinux tools (429-resilient)
+        id: anylinux_tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Ensure a downloader exists before the setup action installs its own.
+          if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+            pacman -Sy --noconfirm curl
+          fi
+          base="https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/refs/heads/main/useful-tools"
+          dir="$RUNNER_TEMP/anylinux-tools"
+          mkdir -p "$dir"
+          # Prefer curl; fall back to wget. Neither's built-in --retry acts on
+          # HTTP 429 reliably, so drive the retry from the shell loop.
+          download() {
+            local url="$1" dest="$2"
+            if command -v curl >/dev/null 2>&1; then
+              curl -fsSL -o "$dest" "$url"
+            else
+              wget -q -O "$dest" "$url"
+            fi
+          }
+          fetch() {
+            local url="$1" dest="$2" attempt
+            for attempt in 1 2 3 4 5 6; do
+              if download "$url" "$dest"; then
+                echo "fetched $url"
+                return 0
+              fi
+              echo "attempt $attempt failed for $url; sleeping..."
+              sleep $((attempt * 15))
+            done
+            echo "ERROR: could not fetch $url after retries" >&2
+            return 1
+          }
+          fetch "$base/quick-sharun.sh"      "$dir/quick-sharun.sh"
+          fetch "$base/get-debloated-pkgs.sh" "$dir/get-debloated-pkgs.sh"
+          fetch "$base/make-aur-package.sh"   "$dir/make-aur-package.sh"
+          install -Dm755 "$dir/quick-sharun.sh"       /usr/local/bin/quick-sharun
+          install -Dm755 "$dir/get-debloated-pkgs.sh" /usr/local/bin/get-debloated-pkgs
+          install -Dm755 "$dir/make-aur-package.sh"   /usr/local/bin/make-aur-package
+
+      # Inlined from pkgforge-dev/anylinux-setup-action@v2, minus its tool
+      # downloads (installed from local copies above).
       - name: Prepare anylinux container
-        uses: pkgforge-dev/anylinux-setup-action@v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          pacman-key --init
+          pacman -Syy --noconfirm archlinux-keyring
+          pacman -Syu --noconfirm \
+              7zip \
+              base-devel \
+              freetype2 \
+              git \
+              jq \
+              libx11 \
+              libxrandr \
+              libxss \
+              nspr \
+              nss \
+              nss-mdns \
+              nss-myhostname \
+              patchelf \
+              pulseaudio \
+              pulseaudio-alsa \
+              unzip \
+              wget \
+              xorg-server-xvfb \
+              zsync
 
       - name: Install build dependencies
         run: |
@@ -140,7 +217,7 @@ jobs:
           # on disk, so the plugin must be installed here to be bundled.
           # libarchive: bsdtar + libarchive.so.13 for fast extraction.
           # sudo: needed for `sudo -u builder` makepkg invocation.
-          # (base-devel is already pulled in by anylinux-setup-action.)
+          # (base-devel is already pulled in by the container-prep step.)
           # zenity is bundled from zenity-rs-bin (static) by the PKGBUILD;
           # not installed here.
           pacman -Syu --noconfirm \
