@@ -288,6 +288,10 @@ jobs:
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:kde-6.9
       options: --privileged
+    env:
+      # Callers must pass `secrets: inherit` for these to be non-empty.
+      # secrets.* is not allowed in step-level `if:`, so surface a flag here.
+      HAVE_GPG: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -296,6 +300,21 @@ jobs:
         with:
           name: libloot-cp312
           path: src/LOOT/
+
+      # Sign the export commits at BUILD time (the action passes --gpg-sign to
+      # flatpak-builder). Without this the bundle's commit is unsigned, and a
+      # bundle that embeds --gpg-keys then FAILS to install ("GPG verification
+      # enabled, but no signatures found") — verification is all-or-nothing.
+      - name: Import GPG signing key
+        if: env.HAVE_GPG == 'true'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+          GPG_KEY_ID: ${{ secrets.FLATPAK_GPG_KEY_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --list-secret-keys "$GPG_KEY_ID" >/dev/null
 
       # Decide the OSTree branch this build publishes to. Tag pushes of the
       # form vX.Y.Z-... (a hyphen ⇒ prerelease) go to `beta`; everything else
@@ -327,24 +346,28 @@ jobs:
           repo-dir: repo
           cache-key: flatpak-builder-${{ github.sha }}
           upload-artifact: false
+          # Empty when secrets aren't inherited → the action skips signing.
+          gpg-sign: ${{ secrets.FLATPAK_GPG_KEY_ID }}
 
       # Bundle with --repo-url: installing the .flatpak then auto-configures
       # the hosted remote as the app's origin, so bundle users get native
       # `flatpak update` / Discover updates from day one (no enroll button).
-      # --gpg-keys embeds the remote's public signing key so those updates are
-      # signature-verified; fetched from the live Pages site (it's public, and
-      # build.yml has no access to the signing secrets) — skipped gracefully
-      # when absent (unsigned repo).
+      # --gpg-keys embeds the public signing key so install + future updates
+      # are signature-verified — but ONLY when this build actually signed its
+      # commits (embedding a key while the commit is unsigned makes the bundle
+      # UNINSTALLABLE: "GPG verification enabled, but no signatures found").
       - name: Bundle (auto-enrolling remote)
+        env:
+          GPG_KEY_ID: ${{ secrets.FLATPAK_GPG_KEY_ID }}
         shell: bash
         run: |
           set -euo pipefail
           GPGOPT=""
-          if curl -fsSL -o amethyst.gpg \
-               https://chrisdkn.github.io/Amethyst-Mod-Manager/amethyst.gpg; then
+          if [ "$HAVE_GPG" = "true" ]; then
+            gpg --export "$GPG_KEY_ID" > amethyst.gpg
             GPGOPT="--gpg-keys=amethyst.gpg"
           else
-            echo "No published signing key — bundle will not embed one."
+            echo "Unsigned build — bundle will not embed a verification key."
           fi
           flatpak build-bundle repo AmethystModManager.flatpak \
             io.github.Amethyst.ModManager '${{ steps.branch.outputs.name }}' \

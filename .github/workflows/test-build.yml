@@ -18,6 +18,8 @@ jobs:
   build:
     name: Build
     uses: ./.github/workflows/build.yml
+    # Sign flatpak export commits so the bundle's embedded --gpg-keys verifies.
+    secrets: inherit
     with:
       build_appimage: ${{ inputs.target != 'flatpak' }}
       build_flatpak: ${{ inputs.target != 'appimage' }}

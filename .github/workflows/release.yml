@@ -25,6 +25,9 @@ jobs:
   build:
     name: Build
     uses: ./.github/workflows/build.yml
+    # Passes the FLATPAK_GPG_* secrets through so the flatpak job can sign its
+    # export commits (required for the bundle's embedded --gpg-keys to verify).
+    secrets: inherit
     with:
       # A Pages dry-run only needs the Flatpak repo artifact — skip the
       # AppImage build to save CI time. Real runs build both.
