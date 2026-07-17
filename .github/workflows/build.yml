@@ -312,26 +312,22 @@ jobs:
             echo "name=stable" >> "$GITHUB_OUTPUT"
           fi
 
-      # Build into a local OSTree repo on the chosen branch. The flathub action
-      # exports to a repo/ internally; we drive flatpak-builder directly so we
-      # keep that repo AND stamp the branch. The bundle is derived from the same
-      # repo afterwards so the two distribution paths stay byte-identical.
+      # Build via the flathub action (it registers the flathub remote, handles
+      # the container quirks, and caches the builder). We use its native inputs
+      # to (a) stamp the OSTree branch (stable/beta), (b) keep the exported
+      # repo/ dir, and (c) also emit the bundle for the fallback path — so we
+      # no longer hand-roll flatpak-builder and re-introduce the "No remote refs
+      # found for flathub" failure.
       - name: Build Flatpak (repo + bundle)
-        shell: bash
-        run: |
-          set -euo pipefail
-          flatpak-builder \
-            --user --disable-rofiles-fuse --force-clean \
-            --repo=repo \
-            --default-branch='${{ steps.branch.outputs.name }}' \
-            --install-deps-from=flathub \
-            _build flatpak/io.github.Amethyst.ModManager.yml
-          # Bundle (fallback distribution / bundle-installed users) from the repo.
-          flatpak build-bundle \
-            repo AmethystModManager.flatpak \
-            io.github.Amethyst.ModManager \
-            '${{ steps.branch.outputs.name }}' \
-            --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo
+        uses: flathub-infra/flatpak-github-actions/flatpak-builder@master
+        with:
+          manifest-path: flatpak/io.github.Amethyst.ModManager.yml
+          branch: ${{ steps.branch.outputs.name }}
+          bundle: AmethystModManager.flatpak
+          build-bundle: true
+          repo-dir: repo
+          cache-key: flatpak-builder-${{ github.sha }}
+          upload-artifact: false
 
       - uses: actions/upload-artifact@v4
         with:
