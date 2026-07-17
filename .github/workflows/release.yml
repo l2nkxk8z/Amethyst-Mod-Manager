@@ -166,6 +166,9 @@ jobs:
     env:
       PAGES_URL: https://chrisdkn.github.io/Amethyst-Mod-Manager
       APP_ID: io.github.Amethyst.ModManager
+      # `secrets.*` is NOT allowed in a step-level `if:`, but it IS allowed in a
+      # job-level env. Surface a plain flag here so steps can gate on env.HAVE_GPG.
+      HAVE_GPG: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY != '' }}
     steps:
       - name: Install flatpak + ostree
         run: |
@@ -217,7 +220,7 @@ jobs:
 
       - name: Import GPG signing key
         id: gpg
-        if: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY != '' }}
+        if: env.HAVE_GPG == 'true'
         env:
           GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
           GPG_KEY_ID: ${{ secrets.FLATPAK_GPG_KEY_ID }}
@@ -253,7 +256,8 @@ jobs:
 
       - name: Export public key + .flatpakrepo
         env:
-          HAVE_GPG: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY != '' }}
+          # HAVE_GPG comes from the job-level env (can't reference secrets in
+          # a step `if:`, but the run body reads the inherited env var fine).
           GPG_KEY_ID: ${{ secrets.FLATPAK_GPG_KEY_ID }}
         run: |
           set -euo pipefail
