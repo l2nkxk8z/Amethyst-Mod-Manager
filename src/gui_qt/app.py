@@ -2313,8 +2313,19 @@ class MainWindow(QMainWindow):
 
         def _on_update():
             if mode == "flatpak":
-                from Utils.version_check import run_flatpak_installer
-                if not run_flatpak_installer(latest):
+                from Utils.ui_config import load_allow_prerelease
+                from Utils.version_check import (
+                    flatpak_installed_from_remote, update_flatpak_from_remote,
+                    run_flatpak_installer,
+                )
+                allow_pre = load_allow_prerelease()
+                # Preferred path: installed from our hosted remote → native
+                # delta update. Fallback: bundle-installed → download the .flatpak.
+                if flatpak_installed_from_remote():
+                    ok = update_flatpak_from_remote(allow_prerelease=allow_pre)
+                else:
+                    ok = run_flatpak_installer(latest)
+                if not ok:
                     # Host flatpak unreachable — fall back to the releases page
                     # rather than silently closing with nothing happening.
                     from Utils.xdg import open_url

@@ -5,7 +5,8 @@ on:
     tags: ['v*']
   workflow_dispatch: {}
 
-# Required for the release-publish step (softprops/action-gh-release).
+# Required for the release-publish step (softprops/action-gh-release) and the
+# publish-pages step (which pushes the OSTree repo to the gh-pages branch).
 permissions:
   contents: write
 
@@ -121,3 +122,140 @@ jobs:
           body_path: ${{ steps.changelog.outputs.found == 'true' && 'release-notes.md' || '' }}
           generate_release_notes: ${{ steps.changelog.outputs.found != 'true' }}
           fail_on_unmatched_files: true
+
+  # ────────────────────────────────────────────────────────────────────
+  # Publish the OSTree repo to GitHub Pages (the hosted Flatpak remote).
+  #
+  # The gh-pages branch holds the ACCUMULATED repo across all releases —
+  # OSTree is incremental, so we must merge this build's objects into the
+  # existing repo (never rebuild from scratch) to keep delta updates working.
+  #
+  # Flow:
+  #   1. checkout gh-pages (the live repo) into ./site (empty on first run)
+  #   2. pull this build's freshly-exported repo artifact into ./newrepo
+  #   3. flatpak build-commit-from: copy newrepo's ref into site/repo
+  #   4. regenerate summary + static deltas so clients get delta updates
+  #   5. drop the .flatpakrepo enrolment file at the Pages root
+  #   6. commit & push gh-pages
+  #
+  # Signing: if a GPG key is configured (secrets.FLATPAK_GPG_PRIVATE_KEY +
+  # FLATPAK_GPG_KEY_ID), commits and the summary are signed and the public
+  # key is embedded in the .flatpakrepo. Without it, the repo is unsigned
+  # (still works; clients add the remote with --no-gpg-verify).
+  # ────────────────────────────────────────────────────────────────────
+  publish-pages:
+    name: Publish Flatpak remote (GitHub Pages)
+    if: |
+      startsWith(github.ref, 'refs/tags/v')
+      && needs.build.result == 'success'
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      PAGES_URL: https://chrisdkn.github.io/Amethyst-Mod-Manager
+      APP_ID: io.github.Amethyst.ModManager
+    steps:
+      - name: Install flatpak + ostree
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak ostree
+
+      - name: Resolve branch
+        id: branch
+        run: |
+          ref='${{ github.ref_name }}'
+          if [[ "$ref" == v*-* ]]; then
+            echo "name=beta" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=stable" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout gh-pages (live repo)
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: site
+        continue-on-error: true
+
+      - name: Ensure site skeleton
+        run: |
+          mkdir -p site/repo
+          # First-ever run: initialise an archive-z2 OSTree repo (the format
+          # served over plain HTTPS).
+          if [ ! -d site/repo/objects ]; then
+            ostree --repo=site/repo init --mode=archive-z2
+          fi
+
+      - name: Download this build's repo
+        uses: actions/download-artifact@v4
+        with:
+          name: AmethystModManager-flatpak-repo
+          path: newrepo
+
+      - name: Import GPG signing key
+        id: gpg
+        if: env.HAVE_GPG == 'true'
+        env:
+          HAVE_GPG: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY != '' }}
+        run: |
+          echo "${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}" | gpg --batch --import
+          echo "sign=--gpg-sign=${{ secrets.FLATPAK_GPG_KEY_ID }}" >> "$GITHUB_OUTPUT"
+
+      - name: Merge build into live repo
+        run: |
+          set -euo pipefail
+          BRANCH='${{ steps.branch.outputs.name }}'
+          SIGN='${{ steps.gpg.outputs.sign }}'
+          REF="app/${APP_ID}/x86_64/${BRANCH}"
+          # Copy the app ref (and its runtime refs are pulled by clients from
+          # flathub, so only the app ref needs to live here) into the live repo.
+          flatpak build-commit-from \
+            --src-repo=newrepo \
+            $SIGN \
+            site/repo "$REF"
+          # Regenerate summary + static deltas so clients fetch deltas, not
+          # full trees, on update.
+          flatpak build-update-repo \
+            --generate-static-deltas \
+            --prune --prune-depth=20 \
+            $SIGN \
+            site/repo
+
+      - name: Export public key + .flatpakrepo
+        env:
+          HAVE_GPG: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY != '' }}
+        run: |
+          set -euo pipefail
+          GPGLINE=""
+          if [ "$HAVE_GPG" = "true" ]; then
+            gpg --export "${{ secrets.FLATPAK_GPG_KEY_ID }}" > site/amethyst.gpg
+            B64=$(base64 -w0 site/amethyst.gpg)
+            GPGLINE="GPGKey=${B64}"
+          fi
+          cat > site/amethyst.flatpakrepo <<EOF
+          [Flatpak Repo]
+          Title=Amethyst Mod Manager
+          Url=${PAGES_URL}/repo/
+          Homepage=https://github.com/ChrisDKN/Amethyst-Mod-Manager
+          Comment=Auto-update remote for Amethyst Mod Manager (stable + beta)
+          Description=Adds the Amethyst Mod Manager Flatpak remote so updates arrive via your package manager.
+          Icon=${PAGES_URL}/icon.png
+          ${GPGLINE}
+          EOF
+          # A .nojekyll file keeps GitHub Pages from mangling the OSTree object
+          # dirs (which start with characters Jekyll would try to process).
+          touch site/.nojekyll
+
+      - name: Push gh-pages
+        run: |
+          set -euo pipefail
+          cd site
+          git init -q
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Publish ${{ github.ref_name }} (${{ steps.branch.outputs.name }})"
+          git branch -M gh-pages
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git"
+          # Force-push a single-commit history: the repo can get large, and we
+          # don't need gh-pages history (the OSTree repo carries its own).
+          git push -f origin gh-pages

@@ -297,16 +297,52 @@ jobs:
           name: libloot-cp312
           path: src/LOOT/
 
-      - name: Build Flatpak bundle
-        uses: flathub-infra/flatpak-github-actions/flatpak-builder@master
-        with:
-          bundle: AmethystModManager.flatpak
-          manifest-path: flatpak/io.github.Amethyst.ModManager.yml
-          cache-key: flatpak-builder-${{ github.sha }}
-          upload-artifact: false
+      # Decide the OSTree branch this build publishes to. Tag pushes of the
+      # form vX.Y.Z-... (a hyphen ⇒ prerelease) go to `beta`; everything else
+      # (stable tags, manual test builds) goes to `stable`. This lets the
+      # hosted remote carry both channels natively — no tag parsing in the app.
+      - name: Resolve flatpak branch
+        id: branch
+        shell: bash
+        run: |
+          ref='${{ github.ref_name }}'
+          if [[ "$ref" == v*-* ]]; then
+            echo "name=beta" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=stable" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Build into a local OSTree repo on the chosen branch. The flathub action
+      # exports to a repo/ internally; we drive flatpak-builder directly so we
+      # keep that repo AND stamp the branch. The bundle is derived from the same
+      # repo afterwards so the two distribution paths stay byte-identical.
+      - name: Build Flatpak (repo + bundle)
+        shell: bash
+        run: |
+          set -euo pipefail
+          flatpak-builder \
+            --user --disable-rofiles-fuse --force-clean \
+            --repo=repo \
+            --default-branch='${{ steps.branch.outputs.name }}' \
+            --install-deps-from=flathub \
+            _build flatpak/io.github.Amethyst.ModManager.yml
+          # Bundle (fallback distribution / bundle-installed users) from the repo.
+          flatpak build-bundle \
+            repo AmethystModManager.flatpak \
+            io.github.Amethyst.ModManager \
+            '${{ steps.branch.outputs.name }}' \
+            --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo
 
       - uses: actions/upload-artifact@v4
         with:
           name: AmethystModManager-flatpak
           path: AmethystModManager.flatpak
+          if-no-files-found: error
+
+      # The raw OSTree repo for this build — consumed by release.yml's
+      # publish-pages job, which merges it into the accumulated gh-pages repo.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AmethystModManager-flatpak-repo
+          path: repo/
           if-no-files-found: error

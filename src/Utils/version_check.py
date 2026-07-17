@@ -18,6 +18,16 @@ _APP_UPDATE_FLATPAK_BUNDLE_URL = (
     "v{tag}/AmethystModManager.flatpak"
 )
 _APP_ID = "io.github.Amethyst.ModManager"
+
+# Hosted Flatpak remote (GitHub Pages). Adding this remote lets the OS handle
+# updates natively (`flatpak update`, GNOME Software, Discover) with delta
+# downloads. `stable` and `beta` are the two OSTree branches published to it.
+_FLATPAK_REMOTE_NAME = "amethyst"
+_FLATPAK_REMOTE_REPO_URL = "https://chrisdkn.github.io/Amethyst-Mod-Manager/repo/"
+_FLATPAK_REMOTE_FILE_URL = (
+    "https://chrisdkn.github.io/Amethyst-Mod-Manager/amethyst.flatpakrepo"
+)
+
 _AUR_API_URL = "https://aur.archlinux.org/rpc/v5/info/amethyst-mod-manager"
 _AUR_PACKAGE_URL = "https://aur.archlinux.org/packages/amethyst-mod-manager"
 
@@ -304,6 +314,146 @@ def run_flatpak_installer(latest_tag: str) -> bool:
         f"{host} flatpak run {_APP_ID} &>/dev/null &"
     )
 
+    try:
+        subprocess.Popen(
+            ["bash", "-c", cmd],
+            stdout=open(log_path, "w", encoding="utf-8"),
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        return True
+    except Exception:
+        return False
+
+
+# ── Hosted-remote update path (preferred over the bundle download) ──────────
+#
+# Once the app is installed from our GitHub Pages remote, updates are the OS's
+# job: `flatpak update` pulls only changed OSTree objects (delta), and GNOME
+# Software / Discover surface the update natively. These helpers (a) tell
+# whether we're already tracking the remote, (b) enrol a bundle-installed user
+# onto it, and (c) trigger an update. All host calls go via `flatpak-spawn
+# --host` — our manifest grants `--talk-name=org.freedesktop.Flatpak`.
+
+
+def _host_flatpak(*args: str, timeout: int = 60):
+    """Run `flatpak <args>` on the host, returning CompletedProcess or None.
+
+    Uses flatpak-spawn --host (we're sandboxed). Returns None if flatpak-spawn
+    is unavailable or the call raises, so callers can treat that as "unknown".
+    """
+    import shutil
+    if not shutil.which("flatpak-spawn"):
+        return None
+    try:
+        return subprocess.run(
+            ["flatpak-spawn", "--host", "flatpak", *args],
+            capture_output=True, text=True, timeout=timeout,
+        )
+    except Exception:
+        return None
+
+
+def flatpak_installed_from_remote() -> bool:
+    """True if our flatpak install tracks the `amethyst` remote (not a bundle).
+
+    `flatpak info --show-origin <app>` prints the origin remote name for a
+    remote-tracked install, or reports no origin / errors for a bundle install.
+    Conservatively returns False when the host can't be queried.
+    """
+    cp = _host_flatpak("info", "--show-origin", _APP_ID)
+    if cp is None or cp.returncode != 0:
+        return False
+    return cp.stdout.strip() == _FLATPAK_REMOTE_NAME
+
+
+def flatpak_remote_present() -> bool:
+    """True if the `amethyst` remote is already configured on the host."""
+    cp = _host_flatpak("remotes", "--columns=name")
+    if cp is None or cp.returncode != 0:
+        return False
+    return any(line.strip() == _FLATPAK_REMOTE_NAME
+               for line in cp.stdout.splitlines())
+
+
+def enroll_flatpak_remote(*, allow_prerelease: bool = False) -> bool:
+    """Add the hosted remote and reinstall the app from it (detached).
+
+    This is the one-time migration for bundle-installed users. After it, all
+    future updates are native `flatpak update`. Adds the remote (idempotent via
+    --if-not-exists), then `flatpak install --reinstall` from it on the chosen
+    branch, then relaunches. Runs detached with a 2s delay so we exit first.
+
+    Returns True if the child launched. GPG verification is left to the remote's
+    own config (the .flatpakrepo carries the key); we add by URL with
+    --no-gpg-verify only as a fallback is NOT used here — the remote file
+    provides the key so verification stays on.
+    """
+    import shutil
+    if not shutil.which("flatpak-spawn"):
+        return False
+
+    branch = "beta" if allow_prerelease else "stable"
+    config_dir = os.path.join(
+        os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
+        "AmethystModManager",
+    )
+    os.makedirs(config_dir, exist_ok=True)
+    log_path = os.path.join(config_dir, "amethyst-update.log")
+
+    host = "flatpak-spawn --host"
+    ref = f"{_APP_ID}/x86_64/{branch}"
+    cmd = (
+        f"sleep 2 && "
+        f"{host} flatpak remote-add --user --if-not-exists "
+        f"{_FLATPAK_REMOTE_NAME} {_FLATPAK_REMOTE_FILE_URL} && "
+        f"{host} flatpak install --user --reinstall --noninteractive -y "
+        f"{_FLATPAK_REMOTE_NAME} {ref} && "
+        f"{host} flatpak run {_APP_ID} &>/dev/null &"
+    )
+    try:
+        subprocess.Popen(
+            ["bash", "-c", cmd],
+            stdout=open(log_path, "w", encoding="utf-8"),
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        return True
+    except Exception:
+        return False
+
+
+def update_flatpak_from_remote(*, allow_prerelease: bool = False) -> bool:
+    """Update (or branch-switch) the app from the hosted remote (detached).
+
+    If the running branch matches the requested channel, a plain
+    `flatpak update` pulls the delta. If the channel changed (user toggled the
+    pre-release box), reinstall the other branch instead — `flatpak update`
+    won't cross branches. Relaunches afterwards. Returns True if launched.
+    """
+    import shutil
+    if not shutil.which("flatpak-spawn"):
+        return False
+
+    branch = "beta" if allow_prerelease else "stable"
+    config_dir = os.path.join(
+        os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
+        "AmethystModManager",
+    )
+    os.makedirs(config_dir, exist_ok=True)
+    log_path = os.path.join(config_dir, "amethyst-update.log")
+
+    host = "flatpak-spawn --host"
+    ref = f"{_APP_ID}/x86_64/{branch}"
+    # Reinstall pins the branch (handles both same-branch update and channel
+    # switch); it's a no-op download when already current, so it's safe as the
+    # single path. --reinstall forces a re-pull even if the ref looks present.
+    cmd = (
+        f"sleep 2 && "
+        f"{host} flatpak install --user --reinstall --noninteractive -y "
+        f"{_FLATPAK_REMOTE_NAME} {ref} && "
+        f"{host} flatpak run {_APP_ID} &>/dev/null &"
+    )
     try:
         subprocess.Popen(
             ["bash", "-c", cmd],
