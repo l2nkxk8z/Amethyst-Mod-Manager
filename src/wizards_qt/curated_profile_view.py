@@ -32,7 +32,7 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QPushButton, QWidget
 
 from gui_qt.safe_emit import safe_emit
@@ -52,6 +52,7 @@ class CuratedProfileView(WizardViewBase):
     _gb_status_sig = Signal(str, str)
     _gb_done_sig = Signal()
     _esm_prep_done_sig = Signal()
+    _premium_sig = Signal(bool)
 
     def __init__(self, game: "BaseGame", log_fn=None, on_close=None, ctx=None,
                  *, profile_repo_path: str, display_name: str,
@@ -69,8 +70,18 @@ class CuratedProfileView(WizardViewBase):
         self._fnv_4gb_step = fnv_4gb_step
         self._info_url = info_url
         self._gb_started = False
+        self._gb_ok = False
         self._esm_prep_started = False
         self._bsa_view = None
+        # Hands-free mode: premium accounts (checked during the fetch step)
+        # auto-advance every successful step — including the embedded
+        # ESM/BSA sub-wizards, whose archives download automatically.
+        self._napi = None
+        self._auto = False
+        self._premium_checked = False
+        self._wait_timer = QTimer(self)
+        self._wait_timer.setInterval(2000)
+        self._wait_timer.timeout.connect(self._guard(self._wait_tick))
         self._bundle_path: "Path | None" = None
         self._manifest: dict | None = None
         # Profile at open — the import completing switches the active profile,
@@ -84,9 +95,9 @@ class CuratedProfileView(WizardViewBase):
         self._fetch_done_sig.connect(self._guard(self._on_fetch_done))
         self._gb_status_sig.connect(self._guard(
             lambda t, c: self._set_status(self._gb_status, t, c)))
-        self._gb_done_sig.connect(self._guard(
-            lambda: self._gb_continue_btn.setEnabled(True)))
+        self._gb_done_sig.connect(self._guard(self._on_gb_done))
         self._esm_prep_done_sig.connect(self._guard(self._enter_esm_step))
+        self._premium_sig.connect(self._guard(self._on_premium_known))
 
         self._stack.addWidget(self._build_intro_page())   # 0
         self._stack.addWidget(self._build_fetch_page())   # 1
@@ -170,6 +181,7 @@ class CuratedProfileView(WizardViewBase):
         self._stack.setCurrentIndex(_PG_FETCH)
         self._retry_btn.setVisible(False)
         self._set_status(self._fetch_status, self.tr("Contacting GitHub…"))
+        self._check_premium()
         repo_path = self._repo_path
 
         def worker():
@@ -186,6 +198,43 @@ class CuratedProfileView(WizardViewBase):
 
         threading.Thread(target=worker, daemon=True,
                          name="curated-profile-fetch").start()
+
+    def _check_premium(self):
+        """Resolve the shared Nexus API (GUI thread) and learn premium status
+        off-thread — premium turns on hands-free auto-advance."""
+        if self._premium_checked:
+            return
+        self._premium_checked = True
+        api_fn = getattr(self._ctx, "nexus_api", None)
+        if api_fn is not None:
+            try:
+                self._napi = api_fn()
+            except Exception:
+                self._napi = None
+        api = self._napi
+        if api is None:
+            return
+
+        def worker():
+            try:
+                if api.validate().is_premium:
+                    safe_emit(self._premium_sig, True)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True,
+                         name="curated-profile-premium").start()
+
+    def _on_premium_known(self, premium: bool):
+        self._auto = bool(premium)
+        self._update_wait_auto_note()
+
+    def _update_wait_auto_note(self):
+        if self._auto and self._stack.currentIndex() == _PG_WAIT:
+            self._set_status(self._wait_status,
+                             self.tr("Premium account — the wizard continues "
+                                     "automatically when the import "
+                                     "completes."))
 
     def _on_fetch_done(self, path):
         if path is None:
@@ -204,6 +253,8 @@ class CuratedProfileView(WizardViewBase):
         self._ran = True
         self._open_import_tab()
         self._stack.setCurrentIndex(_PG_WAIT)
+        self._update_wait_auto_note()
+        self._wait_timer.start()
 
     def _open_import_tab(self):
         import_manifest = getattr(self._ctx, "import_manifest", None)
@@ -255,6 +306,18 @@ class CuratedProfileView(WizardViewBase):
                                      "in the Import tab first, or press "
                                      "Continue again to proceed anyway."), RED)
             return
+        self._proceed_from_wait()
+
+    def _wait_tick(self):
+        """Hands-free mode: the import switching the active profile is the
+        completion signal — continue without a Continue press."""
+        if not self._auto or self._stack.currentIndex() != _PG_WAIT:
+            return
+        if self._current_profile() != self._profile_at_open:
+            self._proceed_from_wait()
+
+    def _proceed_from_wait(self):
+        self._wait_timer.stop()
         if self._esm_chk is not None and self._esm_chk.isChecked():
             self._start_esm_prep()
         else:
@@ -327,7 +390,8 @@ class CuratedProfileView(WizardViewBase):
             self._esm_view = ESMFixesView(
                 self._game, log_fn=self._log,
                 on_close=lambda: self._guard(self._on_esm_done)(),
-                ctx=self._live_ctx(), show_header=False)
+                ctx=self._live_ctx(), show_header=False,
+                auto_continue=self._auto)
             self._embed_step(_PG_ESM, self._esm_view)
         self._stack.setCurrentIndex(_PG_ESM)
 
@@ -347,7 +411,8 @@ class CuratedProfileView(WizardViewBase):
             self._bsa_view = BSADecompressorView(
                 self._game, log_fn=self._log,
                 on_close=lambda: self._guard(self._after_bsa)(),
-                ctx=self._live_ctx(), show_header=False)
+                ctx=self._live_ctx(), show_header=False,
+                auto_continue=self._auto)
             self._embed_step(_PG_BSA, self._bsa_view)
         self._stack.setCurrentIndex(_PG_BSA)
 
@@ -374,6 +439,14 @@ class CuratedProfileView(WizardViewBase):
         lay.addWidget(self._gb_continue_btn, 0, Qt.AlignHCenter)
         return page
 
+    def _on_gb_done(self):
+        self._gb_continue_btn.setEnabled(True)
+        # Hands-free mode: success (or already patched) advances itself;
+        # failures wait for the user.
+        if self._auto and self._gb_ok:
+            QTimer.singleShot(1200, self._guard(
+                lambda: self._stack.setCurrentIndex(_PG_DONE)))
+
     def _enter_4gb_step(self):
         self._stack.setCurrentIndex(_PG_4GB)
         if self._gb_started:
@@ -396,6 +469,7 @@ class CuratedProfileView(WizardViewBase):
                     return
                 state = inspect_exe(game_root)["state"]
                 if state == "patched":
+                    self._gb_ok = True
                     safe_emit(self._gb_status_sig,
                               self.tr("{0} is already 4GB patched.")
                               .format(EXE_NAME), GREEN)
@@ -416,6 +490,7 @@ class CuratedProfileView(WizardViewBase):
                 safe_emit(self._gb_status_sig,
                           self.tr("Patching {0}…").format(EXE_NAME), "")
                 variant = apply_4gb_patch(game_root)
+                self._gb_ok = True
                 _wlog(f"patched {EXE_NAME} ({variant} version), original "
                       f"saved as {BACKUP_NAME}.")
                 safe_emit(self._gb_status_sig,

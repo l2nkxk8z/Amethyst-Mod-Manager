@@ -7962,6 +7962,7 @@ class MainWindow(QMainWindow):
             import_manifest=lambda manifest, stem, bundle_zip:
                 self._open_manifest_import(manifest, stem, bundle_zip=bundle_zip),
             current_profile=lambda: self._gs.profile or "default",
+            nexus_api=self._ensure_nexus_api,
         )
         try:
             view = spec.view_factory(
