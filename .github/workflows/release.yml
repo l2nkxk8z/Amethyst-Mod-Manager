@@ -13,6 +13,16 @@ on:
           is created.
         type: boolean
         default: false
+      publish_live_channel:
+        description: >-
+          Publish this build to the LIVE remote (gh-pages) on the chosen
+          channel WITHOUT creating a GitHub Release — for rehearsing a stable
+          release against real clients before tagging. Only remote-enrolled
+          installs see it; GitHub-release update paths are untouched. Undo
+          with the Rollback workflow. Ignored when dry_run_pages is set.
+        type: choice
+        options: [none, stable, beta]
+        default: none
 
 # Required for the release-publish step (softprops/action-gh-release) and the
 # publish-pages step (which pushes the OSTree repo to the gh-pages branch).
@@ -33,6 +43,10 @@ jobs:
       # AppImage build to save CI time. Real runs build both.
       build_appimage: ${{ !inputs.dry_run_pages }}
       build_flatpak: true
+      # Live-channel rehearsals must stamp the requested OSTree branch (a
+      # dispatch ref is a branch name, so tag-derivation would pick stable
+      # regardless). Empty for tag pushes / dry-runs → tag-derived / stable.
+      flatpak_channel: ${{ (!inputs.dry_run_pages && inputs.publish_live_channel != 'none' && inputs.publish_live_channel) || '' }}
 
   # ────────────────────────────────────────────────────────────────────
   # Publish a GitHub Release with the AppImage and Flatpak bundle.
@@ -159,11 +173,14 @@ jobs:
   # ────────────────────────────────────────────────────────────────────
   publish-pages:
     name: Publish Flatpak remote (GitHub Pages)
-    # Runs on tag pushes (real publish) OR a manual dry-run dispatch. The
-    # dry-run publishes to gh-pages-dryrun so it never touches the live remote.
+    # Runs on tag pushes (real publish), a dry-run dispatch (isolated
+    # gh-pages-dryrun branch), or a live-channel rehearsal dispatch (live
+    # remote, no GitHub Release).
     if: |
       needs.build.result == 'success'
-      && (startsWith(github.ref, 'refs/tags/v') || inputs.dry_run_pages)
+      && (startsWith(github.ref, 'refs/tags/v')
+          || inputs.dry_run_pages
+          || inputs.publish_live_channel != 'none')
     needs: build
     runs-on: ubuntu-latest
     env:
@@ -181,13 +198,20 @@ jobs:
       # Resolve BOTH the OSTree branch (stable/beta) and the git branch the
       # Pages repo lives on. A dry-run forces the `stable` OSTree branch (no
       # tag to parse) and targets gh-pages-dryrun so the real remote is safe.
+      # A live-channel rehearsal targets the LIVE gh-pages on the chosen
+      # channel (the GitHub Release job stays tag-gated regardless).
       - name: Resolve mode
         id: mode
         run: |
+          LIVE='${{ inputs.publish_live_channel }}'
           if [ "${{ inputs.dry_run_pages }}" = "true" ]; then
             echo "ostree=stable"       >> "$GITHUB_OUTPUT"
             echo "git_branch=gh-pages-dryrun" >> "$GITHUB_OUTPUT"
             echo "dry=true"            >> "$GITHUB_OUTPUT"
+          elif [ -n "$LIVE" ] && [ "$LIVE" != "none" ]; then
+            echo "ostree=$LIVE"        >> "$GITHUB_OUTPUT"
+            echo "git_branch=gh-pages" >> "$GITHUB_OUTPUT"
+            echo "dry=false"           >> "$GITHUB_OUTPUT"
           else
             ref='${{ github.ref_name }}'
             if [[ "$ref" == v*-* ]]; then
@@ -257,8 +281,16 @@ jobs:
           # default "Export <app-id>" subject tells users nothing.
           if [ '${{ steps.mode.outputs.dry }}' = 'true' ]; then
             SUBJECT="dry-run ${GITHUB_SHA:0:7}"
-          else
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             SUBJECT="${GITHUB_REF_NAME#v}"
+          else
+            # Live-channel rehearsal: no tag, so the ref name is a branch —
+            # read the app version out of the built commit itself instead.
+            SRC=$(ostree --repo=newrepo rev-parse "$REF")
+            SUBJECT=$(ostree --repo=newrepo cat "$SRC" \
+                        /files/share/amethyst-mod-manager/version.py 2>/dev/null \
+                      | grep -oE '"[^"]+"' | head -1 | tr -d '"' || true)
+            SUBJECT="${SUBJECT:-${GITHUB_REF_NAME}}"
           fi
           # Copy the app ref (and its runtime refs are pulled by clients from
           # flathub, so only the app ref needs to live here) into the live repo.
