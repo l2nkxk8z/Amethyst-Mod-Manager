@@ -14,6 +14,9 @@ from PySide6.QtCore import (
     QT_TRANSLATE_NOOP,
 )
 
+# Crash-proof diagnostic prints (Flatpak stdout can raise BrokenPipeError and
+# kill worker threads). See Utils.app_log.safe_print.
+from Utils.app_log import safe_print as print  # noqa: A004
 from Utils.modlist import ModEntry, read_modlist
 from Utils.filemap import OVERWRITE_NAME, ROOT_FOLDER_NAME
 from gui_qt.modlist_sort import (

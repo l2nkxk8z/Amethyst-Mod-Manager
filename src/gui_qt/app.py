@@ -29,6 +29,12 @@ from gui_qt.game_state import GameState
 from gui_qt.detachable_tabs import DetachableTabWidget
 from gui_qt import glue
 from Utils.proton_tools import DOTNET_VERSIONS
+# Diagnostic prints here run on worker threads and use flush=True. Under
+# Flatpak/AppImage stdout often has no reader, so a full pipe buffer makes
+# print() raise BrokenPipeError, which killed the worker (e.g. the play/deploy
+# build). safe_print swallows stream errors; the text is mirrored to the GUI
+# log anyway. Shadowing the builtin makes every print(...) below crash-proof.
+from Utils.app_log import safe_print as print  # noqa: A004
 
 
 def _load_bg3_modio(stem: str):

@@ -6,6 +6,10 @@ TkStyleHeader owns column resizing; column state persists via column_state.
 
 from __future__ import annotations
 
+# Crash-proof diagnostic prints (Flatpak stdout can raise BrokenPipeError and
+# kill worker threads). See Utils.app_log.safe_print.
+from Utils.app_log import safe_print as print  # noqa: A004
+
 from PySide6.QtCore import Qt, QTimer, QRect, QPoint, QCoreApplication, QEvent
 from PySide6.QtGui import QPainter, QColor, QPen, QAction
 from PySide6.QtWidgets import (
