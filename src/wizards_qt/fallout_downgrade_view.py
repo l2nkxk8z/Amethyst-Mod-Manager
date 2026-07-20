@@ -128,7 +128,10 @@ class FalloutDowngradeView(WizardViewBase):
         proton_script, _compat_data, env = result
 
         proc = subprocess.Popen(
-            proton_run_command(proton_script, "run", str(patcher_exe), env=env),
+            # runinprefix: skips the steam.exe shim so Steam doesn't show the
+            # game as "Running" while the patcher works.
+            proton_run_command(proton_script, "runinprefix", str(patcher_exe),
+                               env=env),
             env=env,
             cwd=str(game_root),
             stdout=subprocess.PIPE,

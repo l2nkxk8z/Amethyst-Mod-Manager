@@ -190,7 +190,10 @@ class ModLoaderInstallerView(WizardViewBase):
 
             self._log(f"{self.TOOL_LABEL} Wizard: launching {exe} via Proton")
             proc = subprocess.Popen(
-                proton_run_command(proton_script, "run", str(exe), env=env),
+                # runinprefix: skips the steam.exe shim so Steam doesn't show
+                # the game as "Running" while the installer is open.
+                proton_run_command(proton_script, "runinprefix", str(exe),
+                                   env=env),
                 env=env, cwd=str(exe.parent),
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             safe_emit(self._run_status_sig,
