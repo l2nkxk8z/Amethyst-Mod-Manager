@@ -143,7 +143,10 @@ class MCPView(WizardViewBase):
 
             self._log(f"MCP Wizard: launching {patch_exe} via Proton")
             proc = subprocess.Popen(
-                proton_run_command(proton_script, "run", str(patch_exe), env=env),
+                # runinprefix: skips the steam.exe shim so Steam doesn't show
+                # the game as "Running" while the patcher is open.
+                proton_run_command(proton_script, "runinprefix",
+                                   str(patch_exe), env=env),
                 env=env,
                 cwd=str(self._game_root),
                 stdout=subprocess.PIPE,
