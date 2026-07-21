@@ -324,6 +324,8 @@ class MainWindow(QMainWindow):
     _bsa_op_done = Signal(object)
     # Custom-handler background sync worker → UI thread (files were written).
     _handlers_synced = Signal()
+    # Manual force-update of one repo handler → UI thread: (game name, status).
+    _handler_force_updated = Signal(str, str)
     # Language (.qm) background sync worker → UI thread (translations updated).
     _languages_synced = Signal()
     # Flatpak 32-bit extension repair worker → UI thread (install succeeded?).
@@ -605,6 +607,7 @@ class MainWindow(QMainWindow):
         # branch on GitHub (background threads). A fresh/updated build re-fetches
         # immediately because the gh_cache is wiped when the app version changes.
         self._handlers_synced.connect(self._on_handlers_synced)
+        self._handler_force_updated.connect(self._on_handler_force_updated)
         self._languages_synced.connect(self._on_languages_synced)
         try:
             from Utils.gh_cache import clear_if_version_changed
@@ -2114,6 +2117,17 @@ class MainWindow(QMainWindow):
                 and getattr(game, "editable", False)):
             actions.append(
                 (self.tr("Edit custom game…"), lambda: self._on_game_action("edit_custom")))
+        # Repo handlers (downloaded from the Resources branch) carry version +
+        # editable metadata; user-authored definitions don't. Only those can be
+        # force-refreshed from the repo.
+        defn = getattr(game, "_defn", None) if game is not None else None
+        if (game is not None
+                and getattr(game, "is_custom", False)
+                and isinstance(defn, dict)
+                and "version" in defn and "editable" in defn):
+            actions.append(
+                (self.tr("Force update handler"),
+                 lambda: self._on_game_action("update_handler")))
         actions.append(
             (self.tr("Open"), [
                 (self.tr("Game folder"),     lambda: self._open_game_dir("game")),
@@ -2145,6 +2159,8 @@ class MainWindow(QMainWindow):
             self._open_custom_game_tab()
         elif which == "edit_custom":
             self._open_edit_custom_game_tab()
+        elif which == "update_handler":
+            self._force_update_handler()
         else:
             self._append_log(f"[game] {which} (not wired yet)")
 
@@ -2233,6 +2249,73 @@ class MainWindow(QMainWindow):
 
         view = CustomGameView(on_done=_done, existing=defn)
         self._tabs.open_tab(view, self.tr("Edit custom game"), key="custom_game")
+
+    def _force_update_handler(self):
+        """Re-download the active game's repo handler .json from the Resources
+        branch right now (bypassing the sync cache) so the user doesn't have to
+        wait for the next startup sync to pick up a repo fix."""
+        from gui_qt.safe_emit import safe_emit
+        from Utils.gh_sync import force_update_handler
+        game = self._gs.game
+        defn = getattr(game, "_defn", None) if game is not None else None
+        if not isinstance(defn, dict):
+            self._append_log("[game] no handler definition to update")
+            return
+        # Repo handlers are named <game_id>.json, but a local edit re-saves
+        # under the game_id — try the on-disk name first, then the canonical.
+        candidates = []
+        src = defn.get("_source_file", "")
+        if src:
+            candidates.append(Path(src).name)
+        gid_name = f"{game.game_id}.json"
+        if gid_name not in candidates:
+            candidates.append(gid_name)
+        name = game.name
+        self._notify(self.tr("Updating handler…"), "info")
+        self._append_log(f"[game] force handler update: {name} ({candidates[0]})")
+        force_update_handler(
+            candidates,
+            on_done=lambda status: safe_emit(
+                self._handler_force_updated, name, status))
+
+    def _on_handler_force_updated(self, name: str, status: str):
+        """Force-update worker finished (UI thread). On a real update, reload
+        the game registry and re-select the game through the normal path so the
+        new definition takes effect everywhere (views, actions, play bar)."""
+        if status == "failed":
+            self._notify(
+                self.tr("Handler update failed — check your connection."),
+                "error")
+            return
+        if status == "missing":
+            self._notify(
+                self.tr("Handler not found on the Resources branch."), "error")
+            return
+        if status == "unchanged":
+            self._notify(self.tr("Handler is already up to date."), "info")
+            return
+        from Utils.game_helpers import _load_games
+        names = _load_games()
+        self._gs.game_names = names
+        real_names = [n for n in names if n != "No games configured"]
+        # A repo rename may have changed the display name; fall back sanely.
+        target = (name if name in real_names
+                  else (real_names[0] if real_names else None))
+        if target is not None:
+            self._game_selector.set_items(real_names, current=target)
+            self._gs.set_game(target)
+            # set_game no-ops when the name didn't change (the common case) —
+            # but _load_games() just rebuilt the game object, so its active
+            # profile dir + per-profile path overrides must be re-applied.
+            self._gs._apply_active_profile()
+            self._game_selector.set_current(target)
+            self._refresh_game_actions()
+            self._refresh_profile_actions()
+            self._refresh_play_selector()
+            self._reload_modlist()
+            self._reload_plugins()
+        self._append_log(f"[game] handler updated from Resources: {name}")
+        self._notify(self.tr("Handler updated."), "success")
 
     def _start_gh_sync(self):
         """Kick off background sync of custom handlers + Qt plugins from GitHub."""
