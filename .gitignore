@@ -19,3 +19,6 @@ decky/
 .mcp.json
 **/__pycache__/
 /tools
+AmethystModManager-AppImage/
+*.AppImage.zsync
+src/appimage/dist/
