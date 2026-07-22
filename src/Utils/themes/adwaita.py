@@ -203,8 +203,8 @@ PALETTE: dict[str, str | tuple] = {
     "FRAMEWORK_MISSING_BG":   "#fcebeb", "FRAMEWORK_MISSING_FG":   "#a51d2d",
 
     # Modlist boundary separator bands (pinned Overwrite / Root Folder rows)
-    "OVERWRITE_SEP_BG": "#def5e5", "OVERWRITE_SEP_FG": "#26a269",
-    "ROOT_SEP_BG":      "#eef4fa", "ROOT_SEP_FG":      "#3584e4",
+    "OVERWRITE_SEP_BG": "#def5e5", "OVERWRITE_SEP_FG": "#33d17a",
+    "ROOT_SEP_BG":      "#99c1f1", "ROOT_SEP_FG":      "#eef4fa",
 
     # Checkbox fill when checked (tick auto-contrasts off this)
     "CHECK_FILL": "#3584e4",
