@@ -12,17 +12,17 @@ CTK_APPEARANCE = "light"
 
 PALETTE: dict[str, str | tuple] = {
     # Backgrounds — Breeze "window" / "view" / "button" greys.
-    "BG_DEEP":       "#f6f5f4",   # window background
-    "BG_PANEL":      "#fafafa",   # raised panel
-    "BG_HEADER":     "#fafafa",   # toolbar / header / button base
+    "BG_DEEP":       "#fafafb",   # window background
+    "BG_PANEL":      "#ebebed",   # raised panel
+    "BG_HEADER":     "#fafafb",   # toolbar / header / button base
     "BG_ROW":        "#ffffff",
-    "BG_ROW_ALT":    "#fafafa",   # zebra alt
-    "BG_ROW_HOVER":  "#f6f5f4",
-    "BG_LIST":       "#f6f5f4",   # Breeze "view" background (lists/trees)
+    "BG_ROW_ALT":    "#f3f3f5",   # zebra alt
+    "BG_ROW_HOVER":  "#d3d3d5",
+    "BG_LIST":       "#f0f0f0",   # Breeze "view" background (lists/trees)
     "BG_SEP":        "#deddda",
-    "BG_HOVER":      "#eef4fa",
+    "BG_HOVER":      "#d3d3d5",
     "BG_SELECT":     "#3584e4",   # Breeze selection blue
-    "BG_HOVER_ROW":  "#f6f5f4",
+    "BG_HOVER_ROW":  "#ffffff",
 
     # Accents — Breeze blue.
     "ACCENT":        "#3584e4",
@@ -88,8 +88,8 @@ PALETTE: dict[str, str | tuple] = {
     "BTN_NEUTRAL_HOV":   "#506069",
 
     # Buttons — greys
-    "BTN_GREY":        "#deddda",
-    "BTN_GREY_HOV":    "#e1e0dd",
+    "BTN_GREY":        "#d5d4d0",
+    "BTN_GREY_HOV":    "#d9d8d4",
     "BTN_GREY_ALT":    "#c0bfbc",
     "BTN_GREY_ALT_HOV":"#c7c6c4",
 
@@ -136,7 +136,7 @@ PALETTE: dict[str, str | tuple] = {
     "BG_BLUE_TEXT":    "#1961bd",
     "BG_DARK_BLUE":    "#eef4fa",
     "BG_DARK_GREEN":   "#def5e5",
-    "BG_ENTRY":        "#ffffff",
+    "BG_ENTRY":        "#e6e6e7",
     "BG_BTN_SAVE":     "#3584e4",
     "BG_SELECT_BAR":   "#eef4fa",
     "BG_MOD_REQ":      "#26a269",
