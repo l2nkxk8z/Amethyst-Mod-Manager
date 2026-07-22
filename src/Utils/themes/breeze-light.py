@@ -47,7 +47,7 @@ PALETTE: dict[str, str | tuple] = {
     # Borders — subtle Breeze separators.
     "BORDER":        "#dfdfdf",
     "BORDER_DIM":    "#e8e8e8",
-    "BORDER_FAINT":  "#f2f2f2",
+    "BORDER_FAINT":  "#bdbdbd",
 
     # Buttons — reds
     "RED_BTN":       "#da4453",
