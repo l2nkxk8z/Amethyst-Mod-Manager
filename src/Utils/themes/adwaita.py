@@ -19,7 +19,7 @@ PALETTE: dict[str, str | tuple] = {
     "BG_ROW_ALT":    "#fafafa",   # zebra alt
     "BG_ROW_HOVER":  "#f6f5f4",
     "BG_LIST":       "#f6f5f4",   # Breeze "view" background (lists/trees)
-    "BG_SEP":        "#c0bfbc",
+    "BG_SEP":        "#deddda",
     "BG_HOVER":      "#eef4fa",
     "BG_SELECT":     "#3584e4",   # Breeze selection blue
     "BG_HOVER_ROW":  "#f6f5f4",
@@ -34,7 +34,7 @@ PALETTE: dict[str, str | tuple] = {
     "TEXT_DIM":      "#5e5c64",
     "TEXT_MUTED":    "#77767b",
     "TEXT_FAINT":    "#9a999a",
-    "TEXT_SEP":      "#c0bfbc",
+    "TEXT_SEP":      "#241f31",
     "TEXT_WHITE":    "#ffffff",
     "TEXT_BLACK":    "#000000",
     "TEXT_OK":       "#26a269",
@@ -88,10 +88,10 @@ PALETTE: dict[str, str | tuple] = {
     "BTN_NEUTRAL_HOV":   "#506069",
 
     # Buttons — greys
-    "BTN_GREY":        "#f6f5f4",
-    "BTN_GREY_HOV":    "#ededeb",
-    "BTN_GREY_ALT":    "#ededeb",
-    "BTN_GREY_ALT_HOV":"#e4e3e2",
+    "BTN_GREY":        "#deddda",
+    "BTN_GREY_HOV":    "#e1e0dd",
+    "BTN_GREY_ALT":    "#c0bfbc",
+    "BTN_GREY_ALT_HOV":"#c7c6c4",
 
     # Buttons — purples
     "BTN_PURPLE":     "#9141ac",
