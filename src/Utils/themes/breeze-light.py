@@ -19,7 +19,7 @@ PALETTE: dict[str, str | tuple] = {
     "BG_ROW_ALT":    "#fcfcfc",   # zebra alt
     "BG_ROW_HOVER":  "#eff0f1",
     "BG_LIST":       "#eff0f1",   # Breeze "view" background (lists/trees)
-    "BG_SEP":        "#dfdfdf",
+    "BG_SEP":        "#e0dfde",
     "BG_HOVER":      "#dae7f3",
     "BG_SELECT":     "#3daee9",   # Breeze selection blue
     "BG_HOVER_ROW":  "#eff0f1",
@@ -34,7 +34,7 @@ PALETTE: dict[str, str | tuple] = {
     "TEXT_DIM":      "#4d4d4d",
     "TEXT_MUTED":    "#6a6a6a",
     "TEXT_FAINT":    "#898989",
-    "TEXT_SEP":      "#b8b8b8",
+    "TEXT_SEP":      "#4d4d4d",
     "TEXT_WHITE":    "#ffffff",
     "TEXT_BLACK":    "#000000",
     "TEXT_OK":       "#009665",
@@ -88,10 +88,10 @@ PALETTE: dict[str, str | tuple] = {
     "BTN_NEUTRAL_HOV":   "#657a8f",
 
     # Buttons — greys
-    "BTN_GREY":        "#eff0f1",
-    "BTN_GREY_HOV":    "#e8e8e8",
-    "BTN_GREY_ALT":    "#e8e8e8",
-    "BTN_GREY_ALT_HOV":"#dfdfdf",
+    "BTN_GREY":        "#e0dfde",
+    "BTN_GREY_HOV":    "#e3e2e1",
+    "BTN_GREY_ALT":    "#d6d5d4",
+    "BTN_GREY_ALT_HOV":"#dadad9",
 
     # Buttons — purples
     "BTN_PURPLE":     "#9b59b6",
@@ -204,7 +204,7 @@ PALETTE: dict[str, str | tuple] = {
 
     # Modlist boundary separator bands (pinned Overwrite / Root Folder rows)
     "OVERWRITE_SEP_BG": "#d4edda", "OVERWRITE_SEP_FG": "#009665",
-    "ROOT_SEP_BG":      "#dae7f3", "ROOT_SEP_FG":      "#3daee9",
+    "ROOT_SEP_BG":      "#dae7f3", "ROOT_SEP_FG":      "#2172a3",
 
     # Checkbox fill when checked (tick auto-contrasts off this)
     "CHECK_FILL": "#3daee9",
