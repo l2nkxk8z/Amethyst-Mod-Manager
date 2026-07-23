@@ -12,17 +12,17 @@ CTK_APPEARANCE = "light"
 
 PALETTE: dict[str, str | tuple] = {
     # Backgrounds — Breeze "window" / "view" / "button" greys.
-    "BG_DEEP":       "#eff0f1",   # window background
-    "BG_PANEL":      "#fcfcfc",   # raised panel
-    "BG_HEADER":     "#fcfcfc",   # toolbar / header / button base
-    "BG_ROW":        "#ffffff",
-    "BG_ROW_ALT":    "#fcfcfc",   # zebra alt
-    "BG_ROW_HOVER":  "#eff0f1",
-    "BG_LIST":       "#eff0f1",   # Breeze "view" background (lists/trees)
+    "BG_DEEP":       "#dee0e2",   # window background
+    "BG_PANEL":      "#eff0f1",   # raised panel
+    "BG_HEADER":     "#dee0e2",   # toolbar / header / button base
+    "BG_ROW":        "#fcfcfc",
+    "BG_ROW_ALT":    "#f7f7f7",   # zebra alt
+    "BG_ROW_HOVER":  "#e3e5e7",
+    "BG_LIST":       "#e0dfde",   # Breeze "view" background (lists/trees)
     "BG_SEP":        "#e0dfde",
-    "BG_HOVER":      "#dae7f3",
+    "BG_HOVER":      "#c2e0f5",
     "BG_SELECT":     "#3daee9",   # Breeze selection blue
-    "BG_HOVER_ROW":  "#eff0f1",
+    "BG_HOVER_ROW":  "#e3e5e7",
 
     # Accents — Breeze blue.
     "ACCENT":        "#3daee9",
@@ -47,7 +47,7 @@ PALETTE: dict[str, str | tuple] = {
     # Borders — subtle Breeze separators.
     "BORDER":        "#dfdfdf",
     "BORDER_DIM":    "#e8e8e8",
-    "BORDER_FAINT":  "#bdbdbd",
+    "BORDER_FAINT":  "#cbcdcd",
 
     # Buttons — reds
     "RED_BTN":       "#da4453",
@@ -88,8 +88,8 @@ PALETTE: dict[str, str | tuple] = {
     "BTN_NEUTRAL_HOV":   "#657a8f",
 
     # Buttons — greys
-    "BTN_GREY":        "#e0dfde",
-    "BTN_GREY_HOV":    "#e3e2e1",
+    "BTN_GREY":        "#c6c9cb",
+    "BTN_GREY_HOV":    "#cbced0",
     "BTN_GREY_ALT":    "#d6d5d4",
     "BTN_GREY_ALT_HOV":"#dadad9",
 
